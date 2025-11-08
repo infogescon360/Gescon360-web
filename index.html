@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GESCON 360 - Sistema Integral de Gestión de Expedientes</title>
+    
+    <!-- Enlaces a recursos externos (CDN) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- 1. ENLACE A TU ARCHIVO CSS (LÍNEA AÑADIDA/CORREGIDA) -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Debug Console - OCULTO POR DEFECTO -->
+    <div id="debugConsole"></div>
+    
+    <!-- Visual Debugger - OCULTO POR DEFECTO -->
+    <div id="visualDebugger"></div>
+    
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Authentication Container -->
+    <div id="authContainer" class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <i class="bi bi-diagram-3"></i>
+                <h2>GESCON 360</h2>
+                <p class="text-muted">Sistema de Gestión de Expedientes</p>
+            </div>
+            
+            <div id="loginAlert" class="alert-custom alert-warning" style="display: none;">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span>No hay usuarios registrados. Debe crear una cuenta de administrador para comenzar.</span>
+            </div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label class="form-label">Correo Electrónico</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                        <input type="email" class="form-control" id="loginEmail" placeholder="tu.email@gescon360.es" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Código de Seguridad</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                        <input type="text" class="form-control" id="loginPassword" placeholder="Escribe el código" required>
+                        <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="rememberMe">
+                    <label class="form-check-label" for="rememberMe">
+                        Recordarme
+                    </label>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn-custom btn-primary-custom" id="loginButton">
+                        <span id="loginButtonText">Iniciar Sesión</span>
+                        <span id="loginSpinner" class="loading d-none"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <div id="appContainer" class="d-none">
+        <!-- Mobile Menu Toggle -->
+        <button class="menu-toggle" onclick="toggleSidebar()">
+            <i class="bi bi-list"></i>
+        </button>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3><i class="bi bi-diagram-3"></i> GESCON 360</h3>
+            </div>
+            <ul class="sidebar-menu">
+                <li><a href="#" class="active" onclick="showSection('dashboard')"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                <li><a href="#" onclick="showSection('import')"><i class="bi bi-upload"></i> Importar Expedientes</a></li>
+                <li><a href="#" onclick="showSection('tasks')"><i class="bi bi-list-task"></i> Gestión de Tareas</a></li>
+                <li><a href="#" onclick="showSection('duplicates')"><i class="bi bi-exclamation-triangle"></i> Duplicados</a></li>
+                <li><a href="#" onclick="showSection('reports')"><i class="bi bi-graph-up"></i> Reportes</a></li>
+                <li><a href="#" onclick="showSection('archive')"><i class="bi bi-archive"></i> Archivados</a></li>
+                <li><a href="#" onclick="showSection('config')"><i class="bi bi-gear"></i> Configuración</a></li>
+            </ul>
+            
+            <div class="admin-section">
+                <div class="sidebar-header">
+                    <h4><i class="bi bi-shield-lock"></i> Administración</h4>
+                </div>
+                <ul class="sidebar-menu">
+                    <li><a href="#" onclick="showSection('admin')"><i class="bi bi-people"></i> Gestión de Responsables<span class="admin-badge">ADMIN</span></a></li>
+                    <li><a href="#" onclick="showSection('workload')"><i class="bi bi-bar-chart"></i> Distribución de Carga<span class="admin-badge">ADMIN</span></a></li>
+                    <li><a href="#" onclick="showSection('limits')"><i class="bi bi-sliders"></i> Límites del Sistema<span class="admin-badge">ADMIN</span></a></li>
+                    <li><a href="#" onclick="showSection('users')"><i class="bi bi-person-gear"></i> Gestión de Usuarios<span class="admin-badge">ADMIN</span></a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar con Logo -->
+            <div class="top-bar">
+                <div class="logo-link">
+                    <!-- 2. RUTA CORREGIDA DEL LOGO (LÍNEA CORREGIDA) -->
+                    <img src="images/logo.png" alt="Logo Gescon360" class="logo-img">
+                    <span class="logo-text">GESCON 360</span>
+                </div>
+                <h1 class="page-title" id="pageTitle">Dashboard</h1>
+                <div class="user-info">
+                    <div class="notification-icon" onclick="showNotifications()">
+                        <i class="bi bi-bell"></i>
+                        <span class="notification-badge">3</span>
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-outline-custom dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle"></i> <span id="userName">Usuario</span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-person"></i> Perfil</a></li>
+                            <li><a class="dropdown-item" href="#"><i class="bi bi-gear"></i> Configuración</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" onclick="logout()"><i class="bi bi-box-arrow-right"></i> Cerrar Sesión</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="content-section active">
+                <div class="row">
+                    <div class="col-12">
+                        <div class="dashboard-card">
+                            <div class="card-header-custom">
+                                <h5 class="card-title">Búsqueda de Expedientes</h5>
+                                <div class="card-icon icon-primary">
+                                    <i class="bi bi-search"></i>
+                                </div>
+                            </div>
+                            
+                            <div class="search-form">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Nº Expediente</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-file-earmark-text"></i></span>
+                                            <input type="text" class="form-control" id="searchExpedient" placeholder="Ej: EXP-2024-001">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Nº Póliza</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-card-text"></i></span>
+                                            <input type="text" class="form-control" id="searchPolicy" placeholder="Ej: POL-123456">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Nº SGR</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-building"></i></span>
+                                            <input type="text" class="form-control" id="searchSGR" placeholder="Ej: SGR-001234">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">DNI</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                                            <input type="text" class="form-control" id="searchDNI" placeholder="Ej: 12345678Z">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="d-flex justify-content-between">
+                                            <div>
+                                                <button class="btn-custom btn-primary-custom" onclick="searchExpedients()">
+                                                    <i class="bi bi-search"></i> Buscar
+                                                </button>
+                                                <button class="btn-custom btn-outline-custom" onclick="clearSearch()">
+                                                    <i class="bi bi-x-circle"></i> Limpiar
+                                                </button>
+                                            </div>
+                                            <div>
+                                                <button class="btn-custom btn-outline-custom" onclick="advancedSearch()">
+                                                    <i class="bi bi-sliders"></i> Búsqueda Avanzada
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resultados de Búsqueda -->
+                <div class="row mt-4" id="searchResults" style="display: none;">
+                    <div class="col-12">
+                        <div class="custom-table">
+                            <div class="table-header">
+                                <h5 class="table-title">Resultados de Búsqueda</h5>
+                                <div class="table-actions">
+                                    <span class="text-muted" id="resultCount">0 resultados encontrados</span>
+                                </div>
+                            </div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>N° Expediente</th>
+                                            <th>N° Póliza</th>
+                                            <th>N° SGR</th>
+                                            <th>Cliente</th>
+                                            <th>DNI</th>
+                                            <th>Estado</th>
+                                            <th>Fecha Vencimiento</th>
+                                            <th>Importe</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="searchResultsTable">
+                                        <!-- Los resultados se cargarán aquí -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estadísticas Rápidas -->
+                <div class="row mt-4">
+                    <div class="col-md-3">
+                        <div class="dashboard-card">
+                            <div class="card-header-custom">
+                                <h5 class="card-title">Total Expedientes</h5>
+                                <div class="card-icon icon-primary">
+                                    <i class="bi bi-folder"></i>
+                                </div>
+                            </div>
+                            <div class="stat-value" id="totalExpedients">0</div>
+                            <div class="stat-label">Activos en sistema</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="dashboard-card">
+                            <div class="card-header-custom">
+                                <h5 class="card-title">Pendientes</h5>
+                                <div class="card-icon icon-warning">
+                                    <i class="bi bi-clock"></i>
+                                </div>
+                            </div>
+                            <div class="stat-value" id="pendingExpedients">0</div>
+                            <div class="stat-label">Por procesar</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="dashboard-card">
+                            <div class="card-header-custom">
+                                <h5 class="card-title">En Proceso</h5>
+                                <div class="card-icon icon-success">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </div>
+                            </div>
+                            <div class="stat-value" id="processExpedients">0</div>
+                            <div class="stat-label">Activos</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="dashboard-card">
+                            <div class="card-header-custom">
+                                <h5 class="card-title">Vencimientos Hoy</h5>
+                                <div class="card-icon icon-danger">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                </div>
+                            </div>
+                            <div class="stat-value" id="dueTodayExpedients">0</div>
+                            <div class="stat-label">Urgentes</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Import Section -->
+            <section id="import" class="content-section">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Importar Expedientes</h5>
+                        <div class="card-icon icon-primary">
+                            <i class="bi bi-upload"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="alert-custom alert-warning">
+                        <i class="bi bi-info-circle"></i>
+                        <span>Seleccione un archivo CSV o Excel con los expedientes a importar. El sistema validará automáticamente la estructura y detectará duplicados.</span>
+                    </div>
+
+                    <div class="file-upload-container" id="fileUploadContainer">
+                        <div class="file-upload-icon">
+                            <i class="bi bi-cloud-upload"></i>
+                        </div>
+                        <div class="file-upload-text">
+                            Arrastra y suelta el archivo aquí o haz clic para seleccionarlo
+                        </div>
+                        <div class="file-upload-hint">
+                            Tamaño máximo: 10 MB | Formatos: CSV, XLS, XLSX
+                        </div>
+                        <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display: none;">
+                        <div class="file-info" id="fileInfo" style="display: none;">
+                            <div class="file-name" id="fileName">-</div>
+                            <div class="file-size" id="fileSize">-</div>
+                        </div>
+                        <div class="file-progress" id="fileProgress">
+                            <div class="file-progress-bar" id="fileProgressBar"></div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Opciones de Importación</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="validateDuplicates" checked>
+                            <label class="form-check-label" for="validateDuplicates">
+                                Verificar duplicados automáticamente
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="normalizeFields" checked>
+                            <label class="form-check-label" for="normalizeFields">
+                                Normalizar campos automáticamente
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="autoTransfer" checked>
+                            <label class="form-check-label" for="autoTransfer">
+                                Traspasar y distribuir automáticamente en tareas
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="autoDistribute" checked>
+                            <label class="form-check-label" for="autoDistribute">
+                                Distribuir equitativamente entre responsables activos
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button class="btn-custom btn-outline-custom" onclick="previewImport()">
+                            <i class="bi bi-eye"></i> Vista Previa
+                        </button>
+                        <button class="btn-custom btn-primary-custom" onclick="importarExpedientes()">
+                            <i class="bi bi-upload"></i> Importar Expedientes
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Import Log -->
+                <div class="custom-table mt-4">
+                    <div class="table-header">
+                        <h5 class="table-title">Registro de Importaciones</h5>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Archivo</th>
+                                    <th>Registros</th>
+                                    <th>Estado</th>
+                                    <th>Duplicados</th>
+                                    <th>Errores</th>
+                                </tr>
+                            </thead>
+                            <tbody id="importLogTable">
+                                <tr>
+                                    <td>10/12/2024 14:30</td>
+                                    <td>expedientes_diciembre.csv</td>
+                                    <td>150</td>
+                                    <td><span class="status-badge status-completado">Completado</span></td>
+                                    <td>0</td>
+                                    <td>0</td>
+                                </tr>
+                                <tr>
+                                    <td>09/12/2024 10:15</td>
+                                    <td>import_noviembre.xlsx</td>
+                                    <td>89</td>
+                                    <td><span class="status-badge status-completado">Completado</span></td>
+                                    <td>2</td>
+                                    <td>0</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tasks Section -->
+            <section id="tasks" class="content-section">
+                <div class="alert-custom alert-urgent" id="urgentAlert" style="display: none;">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <span><strong>Atención:</strong> Hay tareas urgentes que vencen hoy. Se han enviado notificaciones por email.</span>
+                </div>
+
+                <div class="custom-table">
+                    <div class="table-header">
+                        <h5 class="table-title">Gestión de Tareas</h5>
+                        <div class="table-actions">
+                            <button class="btn-custom btn-outline-custom" onclick="filterTasks()">
+                                <i class="bi bi-funnel"></i> Filtrar
+                            </button>
+                            <button class="btn-custom btn-primary-custom" onclick="addNewTask()">
+                                <i class="bi bi-plus"></i> Nueva Tarea
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="selectAll"></th>
+                                    <th>N° Expediente</th>
+                                    <th>N° SGR</th>
+                                    <th>Descripción</th>
+                                    <th>Responsable</th>
+                                    <th>Estado</th>
+                                    <th>Prioridad</th>
+                                    <th>Fecha Límite</th>
+                                    <th>Importe Recobrado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasksTable">
+                                <!-- Tasks will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Duplicates Section -->
+            <section id="duplicates" class="content-section">
+                <div class="alert-custom alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span><strong>Sección de Duplicados:</strong> Los expedientes duplicados se almacenan aquí para su revisión. Puede eliminarlos, mantenerlos o procesarlos manualmente.</span>
+                </div>
+
+                <div class="custom-table">
+                    <div class="table-header">
+                        <h5 class="table-title">Expedientes Duplicados Detectados</h5>
+                        <div class="table-actions">
+                            <button class="btn-custom btn-outline-custom" onclick="processAllDuplicates()">
+                                <i class="bi bi-check-circle"></i> Procesar Todos
+                            </button>
+                            <button class="btn-custom btn-outline-danger" onclick="deleteAllDuplicates()">
+                                <i class="bi bi-trash"></i> Eliminar Todos
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="selectAllDuplicates"></th>
+                                    <th>N° Expediente</th>
+                                    <th>N° SGR</th>
+                                    <th>Cliente</th>
+                                    <th>Fecha Detección</th>
+                                    <th>Veces Repetido</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="duplicatesTable">
+                                <!-- Duplicates will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Users Management Section -->
+            <section id="users" class="content-section">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Gestión de Usuarios</h5>
+                        <div class="card-icon icon-primary">
+                            <i class="bi bi-people"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="alert-custom alert-warning">
+                        <i class="bi bi-shield-lock"></i>
+                        <span>Sección de administración. Solo usuarios con privilegios pueden modificar esta información.</span>
+                    </div>
+
+                    <div class="table-actions mb-3">
+                        <button class="btn-custom btn-primary-custom" onclick="addUser()">
+                            <i class="bi bi-plus"></i> Añadir Usuario
+                        </button>
+                    </div>
+
+                    <div class="custom-table">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nombre</th>
+                                        <th>Email</th>
+                                        <th>Rol</th>
+                                        <th>Estado</th>
+                                        <th>Fecha Registro</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTable">
+                                    <!-- Users will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Admin Section -->
+            <section id="admin" class="content-section">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Gestión de Responsables</h5>
+                        <div class="card-icon icon-primary">
+                            <i class="bi bi-people"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="alert-custom alert-warning">
+                        <i class="bi bi-shield-lock"></i>
+                        <span>Sección de administración. Solo usuarios con privilegios pueden modificar esta información.</span>
+                    </div>
+
+                    <div class="table-actions mb-3">
+                        <button class="btn-custom btn-primary-custom" onclick="addResponsible()">
+                            <i class="bi bi-plus"></i> Añadir Responsable
+                        </button>
+                        <button class="btn-custom btn-outline-custom" onclick="distributeWorkload()">
+                            <i class="bi bi-arrow-repeat"></i> Distribuir Carga Equitativamente
+                        </button>
+                    </div>
+
+                    <div id="responsiblesList">
+                        <!-- Responsible persons will be loaded here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Workload Section -->
+            <section id="workload" class="content-section">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Distribución de Carga de Trabajo</h5>
+                        <div class="card-icon icon-warning">
+                            <i class="bi bi-bar-chart"></i>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">Configuración de Distribución Automática</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="autoDistribute" checked>
+                                    <label class="form-check-label" for="autoDistribute">
+                                        Distribuir automáticamente nuevas tareas
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="considerWorkload" checked>
+                                    <label class="form-check-label" for="considerWorkload">
+                                        Considerar carga actual de trabajo
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="emailNotifications" checked>
+                                    <label class="form-check-label" for="emailNotifications">
+                                        Enviar notificaciones por email
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">Emails para Notificaciones</label>
+                                <textarea class="form-control" id="notificationEmails" rows="4" placeholder="juan.perez@empresa.com&#10;maria.lopez@empresa.com&#10;carlos.rodriguez@empresa.com&#10;ana.martinez@empresa.com&#10;jmpenalvo@gmail.com">juan.perez@empresa.com
+maria.lopez@empresa.com
+carlos.rodriguez@empresa.com
+ana.martinez@empresa.com
+jmpenalvo@gmail.com</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button class="btn-custom btn-outline-custom" onclick="resetWorkloadConfig()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Restablecer
+                        </button>
+                        <button class="btn-custom btn-primary-custom" onclick="saveWorkloadConfig()">
+                            <i class="bi bi-check"></i> Guardar Configuración
+                        </button>
+                    </div>
+                </div>
+
+                <div class="custom-table mt-4">
+                    <div class="table-header">
+                        <h5 class="table-title">Resumen de Carga de Trabajo Actual</h5>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Responsable</th>
+                                    <th>Estado</th>
+                                    <th>Tareas Activas</th>
+                                    <th>Tareas Completadas</th>
+                                    <th>Carga de Trabajo</th>
+                                    <th>Disponibilidad</th>
+                                </tr>
+                            </thead>
+                            <tbody id="workloadTable">
+                                <!-- Workload data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Limits Section -->
+            <section id="limits" class="content-section">
+                <div class="dashboard-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Configuración de Límites del Sistema</h5>
+                        <div class="card-icon icon-warning">
+                            <i class="bi bi-sliders"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="alert-custom alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <span><strong>Precaución:</strong> Modificar estos límites puede afectar el rendimiento del sistema. Asegúrese de tener suficiente espacio de almacenamiento.</span>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">Límites de Archivos</label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label class="form-label">Tamaño Máximo de Archivo (MB)</label>
+                                            <input type="number" class="form-control" id="maxFileSize" value="10" min="1" max="100">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label class="form-label">Archivos Simultáneos</label>
+                                            <input type="number" class="form-control" id="maxConcurrentFiles" value="5" min="1" max="20">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">Límites de Registros</label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label class="form-label">Máximo de Expedientes</label>
+                                            <input type="number" class="form-control" id="maxExpedientes" value="5000" min="100" max="50000">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label class="form-label">Máximo de Tareas Activas</label>
+                                            <input type="number" class="form-control" id="maxActiveTasks" value="2000" min="100" max="20000">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">Límites de Archivados</label>
+                                <div class="row">
+                                    <div class="col-md-12">
+                                        <div class="form-group">
+                                            <label class="form-label">Máximo de Expedientes Archivados</label>
+                                            <input type="number" class="form-control" id="maxArchivedExpedients" value="10000" min="100" max="100000">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button class="btn-custom btn-outline-custom" onclick="resetLimits()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Restablecer Valores Predeterminados
+                        </button>
+                        <button class="btn-custom btn-primary-custom" onclick="saveLimits()">
+                            <i class="bi bi-check"></i> Guardar Configuración
+                        </button>
+                    </div>
+                </div>
+
+                <div class="custom-table mt-4">
+                    <div class="table-header">
+                        <h5 class="table-title">Estado Actual del Sistema</h5>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Recurso</th>
+                                    <th>Límite Configurado</th>
+                                    <th>Uso Actual</th>
+                                    <th>Porcentaje Utilizado</th>
+                                    <th>Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Archivos de Importación</td>
+                                    <td>10 MB</td>
+                                    <td>2.3 MB</td>
+                                    <td>23%</td>
+                                    <td><span class="status-badge status-available">Normal</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Expedientes Activos</td>
+                                    <td>5,000</td>
+                                    <td>1,247</td>
+                                    <td>25%</td>
+                                    <td><span class="status-badge status-available">Normal</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Tareas Activas</td>
+                                    <td>2,000</td>
+                                    <td>156</td>
+                                    <td>8%</td>
+                                    <td><span class="status-badge status-available">Normal</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Expedientes Archivados</td>
+                                    <td>10,000</td>
+                                    <td>856</td>
+                                    <td>9%</td>
+                                    <td><span class="status-badge status-available">Normal</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reports Section -->
+            <section id="reports" class="content-section">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="dashboard-card">
+                            <h5 class="card-title">Estadísticas Mensuales</h5>
+                            <canvas id="monthlyChart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="dashboard-card">
+                            <h5 class="card-title">Distribución por Estado</h5>
+                            <canvas id="statusChart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="custom-table mt-4">
+                    <div class="table-header">
+                        <h5 class="table-title">Reporte de Productividad</h5>
+                        <div class="table-actions">
+                            <button class="btn-custom btn-outline-custom" onclick="exportReport()">
+                                <i class="bi bi-download"></i> Exportar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Mes</th>
+                                    <th>Expedientes Procesados</th>
+                                    <th>Tiempo Promedio (días)</th>
+                                    <th>Tasa de Éxito</th>
+                                    <th>Importe Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Diciembre 2024</td>
+                                    <td>45</td>
+                                    <td>12.5</td>
+                                    <td>92%</td>
+                                    <td>€125,450.00</td>
+                                </tr>
+                                <tr>
+                                    <td>Noviembre 2024</td>
+                                    <td>52</td>
+                                    <td>10.8</td>
+                                    <td>88%</td>
+                                    <td>€98,320.00</td>
+                                </tr>
+                                <tr>
+                                    <td>Octubre 2024</td>
+                                    <td>38</td>
+                                    <td>14.2</td>
+                                    <td>95%</td>
+                                    <td>€156,780.00</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+            <!-- Archive Section -->
+            <section id="archive" class="content-section">
+                <div class="alert-custom alert-warning">
+                    <i class="bi bi-info-circle"></i>
+                    <span>Los expedientes archivados se conservan para consulta histórica pero no están activos en el flujo de trabajo actual.</span>
+                </div>
+
+                <div class="custom-table">
+                    <div class="table-header">
+                        <h5 class="table-title">Expedientes Archivados</h5>
+                        <div class="table-actions">
+                            <button class="btn-custom btn-outline-custom" onclick="searchArchive()">
+                                <i class="bi bi-search"></i> Buscar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>N° Expediente</th>
+                                    <th>N° SGR</th>
+                                    <th>Cliente</th>
+                                    <th>Fecha Archivo</th>
+                                    <th>Motivo</th>
+                                    <th>Importe Final</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>EXP-2023-856</td>
+                                    <td>SGR-001237</td>
+                                    <td>expedientes_2023.csv</td>
+                                    <td><span class="date-cell" onclick="openDatePicker(this, 'ARCH-EXP-2023-856')"><i class="bi bi-calendar-event"></i>30/11/2024</span></td>
+                                    <td>Completado satisfactoriamente</td>
+                                    <td>€45,680.00</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="viewArchived('EXP-2023-856')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-warning" onclick="restoreExpedient('EXP-2023-856')">
+                                            <i class="bi bi-arrow-counterclockwise"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+            <!-- Config Section -->
+            <section id="config" class="content-section">
+                <div class="dashboard-card">
+                    <h5 class="card-title">Configuración del Sistema</h5>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Configuración General</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label class="form-label">Nombre de la Empresa</label>
+                                    <input type="text" class="form-control" value="GESCON 360">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label class="form-label">Formato de Fecha</label>
+                                    <select class="form-select">
+                                        <option>DD/MM/YYYY</option>
+                                        <option>MM/DD/YYYY</option>
+                                        <option>YYYY-MM-DD</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Automatizaciones</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="autoReminders" checked>
+                            <label class="form-check-label" for="autoReminders">
+                                Enviar recordatorios automáticos de vencimientos
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="autoArchive" checked>
+                            <label class="form-check-label" for="autoArchive">
+                                Archivar expedientes completados automáticamente
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="autoBackup" checked>
+                            <label class="form-check-label" for="autoBackup">
+                                Realizar respaldos automáticos diarios
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Integraciones</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="googleCalendar" checked>
+                                    <label class="form-check-label" for="googleCalendar">
+                                        Google Calendar
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="emailNotifications" checked>
+                                    <label class="form-check-label" for="emailNotifications">
+                                        Notificaciones por Email
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button class="btn-custom btn-outline-custom" onclick="resetConfig()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Restablecer
+                        </button>
+                        <button class="btn-custom btn-primary-custom" onclick="saveConfig()">
+                            <i class="bi bi-check"></i> Guardar Configuración
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Task Modal -->
+        <div class="modal-overlay" id="taskModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Nueva Tarea</h5>
+                    <button class="modal-close" onclick="closeModal('taskModal')">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">N° Expediente</label>
+                        <input type="text" class="form-control" id="taskExpedient">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">N° SGR</label>
+                        <input type="text" class="form-control" id="taskSGR" placeholder="Ej: SGR-001234">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Descripción</label>
+                        <textarea class="form-control" id="taskDescription" rows="5" maxlength="900"></textarea>
+                        <div class="char-counter"><span id="char-count">0</span> / 900 caracteres</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Responsable</label>
+                        <select class="form-select" id="taskResponsible">
+                            <option value="">Sin asignar</option>
+                            <option value="Juan Pérez">Juan Pérez</option>
+                            <option value="María López">María López</option>
+                            <option value="Carlos Rodríguez">Carlos Rodríguez</option>
+                            <option value="Ana Martínez">Ana Martínez</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" id="taskStatus">
+                            <option value="Pdte. Revisión">Pdte. Revisión</option>
+                            <option value="Gestionando">Gestionando</option>
+                            <option value="Datos NO válidos">Datos NO válidos</option>
+                            <option value="Rehusado NO cobertura">Rehusado NO cobertura</option>
+                            <option value="Recobrado">Recobrado</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Opción de archivar (inicialmente oculta) -->
+                    <div id="archive-option" class="form-group" style="display: none;">
+                        <label>
+                            <input type="checkbox" id="archive-checkbox" name="archive">
+                            ¿Desea remitir el expediente a Archivados?
+                        </label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Prioridad</label>
+                        <select class="form-select" id="taskPriority">
+                            <option value="baja">Baja</option>
+                            <option value="media">Media</option>
+                            <option value="alta">Alta</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fecha Límite</label>
+                        <input type="date" class="form-control" id="taskDeadline">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Importe Recobrado</label>
+                        <input type="text" class="form-control" id="taskRecoveredAmount" placeholder="€0.00">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-custom btn-outline-custom" onclick="closeModal('taskModal')">
+                        Cancelar
+                    </button>
+                    <button class="btn-custom btn-primary-custom" onclick="saveTask()">
+                        <i class="bi bi-check"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Modal -->
+        <div class="modal-overlay" id="userModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="userModalTitle">Añadir Usuario</h5>
+                    <button class="modal-close" onclick="closeModal('userModal')">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Nombre Completo</label>
+                        <input type="text" class="form-control" id="userName" placeholder="Juan Pérez">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Correo Electrónico</label>
+                        <input type="email" class="form-control" id="userEmail" placeholder="correo@ejemplo.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Rol</label>
+                        <select class="form-select" id="userRole">
+                            <option value="user">Usuario</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Contraseña</label>
+                        <input type="password" class="form-control" id="userPassword" placeholder="Dejar en blanco para generar automáticamente">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" id="userStatus">
+                            <option value="active">Activo</option>
+                            <option value="inactive">Inactivo</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-custom btn-outline-custom" onclick="closeModal('userModal')">
+                        Cancelar
+                    </button>
+                    <button class="btn-custom btn-primary-custom" onclick="saveUser()">
+                        <i class="bi bi-check"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Responsible Modal -->
+        <div class="modal-overlay" id="responsibleModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="responsibleModalTitle">Añadir Responsable</h5>
+                    <button class="modal-close" onclick="closeModal('responsibleModal')">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Nombre Completo</label>
+                        <input type="text" class="form-control" id="responsibleName" placeholder="Juan Pérez">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" id="responsibleEmail" placeholder="juan.perez@empresa.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Estado</label>
+                        <select class="form-select" id="responsibleStatus">
+                            <option value="available">Disponible</option>
+                            <option value="vacation">Vacaciones</option>
+                            <option value="sick">Baja Médica</option>
+                            <option value="permission">Permiso</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Participar en Distribución</label>
+                        <select class="form-select" id="responsibleDistribution">
+                            <option value="yes">Sí</option>
+                            <option value="no">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fecha de Retorno (si aplica)</label>
+                        <input type="date" class="form-control" id="responsibleReturnDate">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-custom btn-outline-custom" onclick="closeModal('responsibleModal')">
+                        Cancelar
+                    </button>
+                    <button class="btn-custom btn-primary-custom" onclick="saveResponsible()">
+                        <i class="bi bi-check"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification Modal -->
+        <div class="modal-overlay" id="notificationModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Notificaciones</h5>
+                    <button class="modal-close" onclick="closeModal('notificationModal')">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert-custom alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <span><strong>3 expedientes</strong> vencen esta semana</span>
+                    </div>
+                    <div class="alert-custom alert-success">
+                        <i class="bi bi-check-circle"></i>
+                        <span><strong>Importación completada</strong> - 150 expedientes procesados</span>
+                    </div>
+                    <div class="alert-custom alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <span><strong>Nueva actualización</strong> disponible para el sistema</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-custom btn-primary-custom" onclick="closeModal('notificationModal')">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts externos -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- 3. ENLACE A TU ARCHIVO JAVASCRIPT (LÍNEA AÑADIDA) -->
+    <script src="script.js"></script>
+</body>
+</html>
