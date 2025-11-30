@@ -338,6 +338,27 @@ async function logout() {
         showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
     }
 }
+
+    // Función temporal para crear el primer usuario admin
+async function registerFirstUser() {
+  console.log('Registrando primer usuario admin...');
+  
+  try {
+    const { data, error } = await supabaseClient.auth.signUp({
+      email: 'jesus.mp@gescon360.es',
+      password: 'Gescon360Admin'
+    });
+    
+    if (error) throw error;
+    
+    console.log('Usuario creado exitosamente:', data);
+    showToast('success', 'Éxito', 'Usuario admin creado. Revisa tu email para confirmar la cuenta o inténtalo iniciar sesión directamente.');
+    
+  } catch (error) {
+    console.error('Error al crear usuario:', error);
+    showToast('danger', 'Error', error.message || 'No se pudo crear el usuario');
+  }
+}
 // Initialize Application
 function initializeApp() {
     console.log('Initializing application');
@@ -628,4 +649,5 @@ document.addEventListener('click', function(event) {
     }
 
 });
+
 
