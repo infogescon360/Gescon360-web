@@ -163,37 +163,34 @@ function setupStatusArchiveLogic() {
 }
 
 // Check authentication status
-function checkAuthStatus() {
+async function checkAuthStatus() {
     console.log('Checking authentication status...');
     showLoading();
     
-    // ESTA FUNCIÓN DEBERÁ SER REEMPLAZADA
-    // Por ahora, simulamos que no hay usuario para mostrar el login.
-    setTimeout(() => {
-        hideLoading();
-        showAuth(); // Muestra el formulario de login
-    }, 500);
-
-    /* Código original de Apps Script (a reemplazar):
-    google.script.run.withSuccessHandler(function(user) {
-        console.log('Auth check successful');
+    try {
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
+        
+        if (error) throw error;
+        
         hideLoading();
         
-        if (user) {
-            currentUser = user;
+        if (session && session.user) {
+            currentUser = {
+                email: session.user.email,
+                name: session.user.email.split('@')[0],
+                id: session.user.id
+            };
             showApp();
             initializeApp();
         } else {
             showAuth();
-            checkUsers();
         }
-    }).withFailureHandler(function(error) {
-        handleGASError(error, 'verificación de autenticación');
+    } catch (error) {
+        console.error('Error checking auth status:', error);
+        hideLoading();
         showAuth();
-    }).checkAuthStatus();
-    */
+    }
 }
-
 // Check if there are registered users
 function checkUsers() {
     console.log('Checking if users exist...');
@@ -270,76 +267,77 @@ function showApp() {
 }
 
 // Login function
-function login() {
+async function login() {
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
-    
-    // Validar dominio del email
+
+    // Validate domain
     if (!email.endsWith('@gescon360.es')) {
         showToast('danger', 'Error de validación', 'El dominio del correo debe ser @gescon360.es');
         return;
     }
 
-    console.log(`Login attempt with email: ${email}`);
-    
-    // Show loading
-    document.getElementById('loginButtonText').classList.add('d-none');
-    document.getElementById('loginSpinner').classList.remove('d-none');
-    document.getElementById('loginButton').disabled = true;
-    
-    // ESTA FUNCIÓN DEBERÁ SER REEMPLAZADA
-    // Por ahora, simulamos un login fallido.
-    setTimeout(() => {
-        document.getElementById('loginButtonText').classList.remove('d-none');
-        document.getElementById('loginSpinner').classList.add('d-none');
-        document.getElementById('loginButton').disabled = false;
-        showToast('danger', 'Error de autenticación', 'Correo o código incorrectos');
-    }, 1500);
+    console.log('Login attempt with email:', email);
 
-    /* Código original de Apps Script (a reemplazar):
-    google.script.run.withSuccessHandler(function(user) {
-        console.log('Login success');
-        
+    // Show loading
+    const loginButtonText = document.getElementById('loginButtonText');
+    const loginSpinner = document.getElementById('loginSpinner');
+    const loginButton = document.getElementById('loginButton');
+    
+    loginButtonText.classList.add('d-none');
+    loginSpinner.classList.remove('d-none');
+    loginButton.disabled = true;
+
+    try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+
+        if (error) throw error;
+
         // Hide loading
-        document.getElementById('loginButtonText').classList.remove('d-none');
-        document.getElementById('loginSpinner').classList.add('d-none');
-        document.getElementById('loginButton').disabled = false;
-        
-        if (user) {
-            currentUser = user;
+        loginButtonText.classList.remove('d-none');
+        loginSpinner.classList.add('d-none');
+        loginButton.disabled = false;
+
+        if (data.user) {
+            currentUser = {
+                email: data.user.email,
+                name: data.user.email.split('@')[0],
+                id: data.user.id
+            };
             showApp();
             initializeApp();
             showToast('success', 'Bienvenido', 'Has iniciado sesión correctamente');
-        } else {
-            showToast('danger', 'Error de autenticación', 'Correo o contraseña incorrectos');
         }
-    }).withFailureHandler(function(error) {
-        handleGASError(error, 'inicio de sesión');
-    }).login(email, password);
-    */
-}
-
+    } catch (error) {
+        console.error('Login error:', error);
+        loginButtonText.classList.remove('d-none');
+        loginSpinner.classList.add('d-none');
+        loginButton.disabled = false;
+        showToast('danger', 'Error de autenticación', error.message || 'Correo o contraseña incorrectos');
+    }
 // Logout function
-function logout() {
+async function logout() {
     console.log('Logout attempt');
-    
-    // ESTA FUNCIÓN DEBERÁ SER REEMPLAZADA
-    currentUser = null;
-    showAuth();
-    showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
 
-    /* Código original de Apps Script (a reemplazar):
-    google.script.run.withSuccessHandler(function() {
-        console.log('Logout success');
+    try {
+        const { error } = await supabaseClient.auth.signOut();
+        
+        if (error) throw error;
+        
         currentUser = null;
         showAuth();
         showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
-    }).withFailureHandler(function(error) {
-        handleGASError(error, 'cierre de sesión');
-    }).logout();
-    */
+    } catch (error) {
+        console.error('Logout error:', error);
+        // Even if there's an error, clear the local session
+        currentUser = null;
+        showAuth();
+        showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
+    }
 }
-
 // Initialize Application
 function initializeApp() {
     console.log('Initializing application');
@@ -630,3 +628,4 @@ document.addEventListener('click', function(event) {
     }
 
 });
+
