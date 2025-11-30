@@ -10,6 +10,13 @@
  * =============================================================================
  */
 
+// Configuración de Supabase
+const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_pikHbbQBbW9LLQcf3drog_BQ2reqkF';
+
+// Inicializar cliente de Supabase
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // Global Variables
 let currentSection = 'dashboard';
 let currentUser = null;
@@ -621,4 +628,5 @@ document.addEventListener('click', function(event) {
     if (event.target.classList.contains('modal-overlay')) {
         event.target.classList.remove('active');
     }
+
 });
