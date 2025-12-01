@@ -12,8 +12,7 @@
 
 // Configuración de Supabase
 const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_pikHbbQBbW9LLQcf3drog_BQ2reqkF';
-
+const SUPABASE_ANON_KEY = 'sb_publishable_pIkhbDqBb0v9LLQcf3drog_BO2reqkF';
 // Inicializar cliente de Supabase
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -349,3 +348,4 @@ async function registerFirstUser() {
       password: 'Gescon360Admin',
       email_confirm: true  // Esto marca el email como confirmado automáticamente
     });
+
