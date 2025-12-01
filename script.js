@@ -252,7 +252,18 @@ function togglePasswordVisibility(inputId, buttonId) {
     }
 }
 
+
+// Hide create admin button after first user is created
+function hideCreateAdminButton() {
+    const createAdminBtn = document.getElementById('createAdminButton');
+    if (createAdminBtn) {
+        createAdminBtn.style.display = 'none';
+    }
+}
+
 // Show/hide main containers
+220
+
 function showAuth() {
     console.log('Showing auth container');
     document.getElementById('authContainer').classList.remove('d-none');
@@ -308,6 +319,7 @@ async function login() {
             };
             showApp();
             initializeApp();
+                        hideCreateAdminButton(); // Hide admin button after login
             showToast('success', 'Bienvenido', 'Has iniciado sesión correctamente');
         }
     } catch (error) {
@@ -348,4 +360,5 @@ async function registerFirstUser() {
       password: 'Gescon360Admin',
       email_confirm: true  // Esto marca el email como confirmado automáticamente
     });
+
 
