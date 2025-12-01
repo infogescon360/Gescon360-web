@@ -190,6 +190,7 @@ async function checkAuthStatus() {
         showAuth();
     }
 }
+
 // Check if there are registered users
 function checkUsers() {
     console.log('Checking if users exist...');
@@ -252,7 +253,6 @@ function togglePasswordVisibility(inputId, buttonId) {
     }
 }
 
-
 // Hide create admin button after first user is created
 function hideCreateAdminButton() {
     const createAdminBtn = document.getElementById('createAdminButton');
@@ -262,8 +262,6 @@ function hideCreateAdminButton() {
 }
 
 // Show/hide main containers
-220
-
 function showAuth() {
     console.log('Showing auth container');
     document.getElementById('authContainer').classList.remove('d-none');
@@ -319,7 +317,7 @@ async function login() {
             };
             showApp();
             initializeApp();
-                        hideCreateAdminButton(); // Hide admin button after login
+            hideCreateAdminButton(); // Hide admin button after login
             showToast('success', 'Bienvenido', 'Has iniciado sesión correctamente');
         }
     } catch (error) {
@@ -329,6 +327,8 @@ async function login() {
         loginButton.disabled = false;
         showToast('danger', 'Error de autenticación', error.message || 'Correo o contraseña incorrectos');
     }
+} // ← cierre correcto de login()
+
 // Logout function
 async function logout() {
     console.log('Logout attempt');
@@ -350,29 +350,26 @@ async function logout() {
     }
 }
 
-    // Función temporal para crear el primer usuario admin
+// Función temporal para crear el primer usuario admin
 async function registerFirstUser() {
-  console.log('Registrando primer usuario admin...');
+    console.log('Registrando primer usuario admin...');
   
-  try {
-    const { data, error } = await supabaseClient.auth.admin.createUser({
-      email: 'jesus.mp@gescon360.es',
-      password: 'Gescon360Admin',
-      email_confirm: true  // Esto marca el email como confirmado automáticamente
-    });
+    try {
+        const { data, error } = await supabaseClient.auth.admin.createUser({
+            email: 'jesus.mp@gescon360.es',
+            password: 'Gescon360Admin',
+            email_confirm: true  // Esto marca el email como confirmado automáticamente
+        });
 
-          if (error) {
-        console.error('Error creando usuario:', error);
-        showToast('danger', 'Error', 'No se pudo crear el usuario: ' + error.message);
-    } else {
-        console.log('Usuario creado:', data);
-        showToast('success', 'Éxito', 'Usuario admin creado correctamente. Ahora puedes iniciar sesión.');
+        if (error) {
+            console.error('Error creando usuario:', error);
+            showToast('danger', 'Error', 'No se pudo crear el usuario: ' + error.message);
+        } else {
+            console.log('Usuario creado:', data);
+            showToast('success', 'Éxito', 'Usuario admin creado correctamente. Ahora puedes iniciar sesión.');
+        }
+    } catch (error) {
+        console.error('Error en registerFirstUser:', error);
+        showToast('danger', 'Error', 'Error al crear usuario: ' + error.message);
     }
-  } catch (error) {
-    console.error('Error en registerFirstUser:', error);
-    showToast('danger', 'Error', 'Error al crear usuario: ' + error.message);
-  }
 }
-
-
-
