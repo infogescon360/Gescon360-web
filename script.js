@@ -361,4 +361,18 @@ async function registerFirstUser() {
       email_confirm: true  // Esto marca el email como confirmado automáticamente
     });
 
+          if (error) {
+        console.error('Error creando usuario:', error);
+        showToast('danger', 'Error', 'No se pudo crear el usuario: ' + error.message);
+    } else {
+        console.log('Usuario creado:', data);
+        showToast('success', 'Éxito', 'Usuario admin creado correctamente. Ahora puedes iniciar sesión.');
+    }
+  } catch (error) {
+    console.error('Error en registerFirstUser:', error);
+    showToast('danger', 'Error', 'Error al crear usuario: ' + error.message);
+  }
+}
+
+
 
