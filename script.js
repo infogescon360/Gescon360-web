@@ -373,3 +373,207 @@ async function registerFirstUser() {
         showToast('danger', 'Error', 'Error al crear usuario: ' + error.message);
     }
 }
+
+// ============================================================================
+// TABLA DE SEGURIDAD Y ACCESO - GESTIÓN DE USUARIOS Y PERMISOS
+// ============================================================================
+
+// Load security and access management table
+async function loadSecurityTable() {
+    console.log('Loading Security Table...');
+    showLoading();
+    
+    try {
+        // Fetch all users from Supabase
+        const { data: users, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        usersData = users || [];
+        renderSecurityTable();
+        setupSecurityTableEventListeners();
+        
+    } catch (error) {
+        console.error('Error loading security table:', error);
+        showToast('danger', 'Error', 'No se pudo cargar la tabla de seguridad: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Render security table in the UI
+function renderSecurityTable() {
+    const tbody = document.querySelector('#securityTable tbody');
+    if (!tbody) {
+        console.warn('Security table tbody not found');
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    if (usersData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay usuarios registrados</td></tr>';
+        return;
+    }
+    
+    usersData.forEach(user => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${user.id || 'N/A'}</td>
+            <td>${user.full_name || user.email.split('@')[0]}</td>
+            <td>${user.email}</td>
+            <td><span class="badge badge-${user.role === 'admin' ? 'danger' : 'info'}">${user.role || 'user'}</span></td>
+            <td><span class="badge badge-${user.status === 'active' ? 'success' : 'secondary'}">${user.status || 'inactive'}</span></td>
+            <td>
+                <button class="btn btn-sm btn-warning" onclick="editUserSecurity('${user.id}')">Editar</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteUserSecurity('${user.id}')">Eliminar</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Setup event listeners for security table
+function setupSecurityTableEventListeners() {
+    const addUserBtn = document.getElementById('addUserSecurityBtn');
+    if (addUserBtn) {
+        addUserBtn.addEventListener('click', showAddUserDialog);
+    }
+}
+
+// Show dialog to add new user
+function showAddUserDialog() {
+    const name = prompt('Nombre completo del usuario:');
+    if (!name) return;
+    
+    const email = prompt('Correo electrónico (debe ser @gescon360.es):');
+    if (!email) return;
+    
+    if (!email.endsWith('@gescon360.es')) {
+        showToast('danger', 'Error', 'El dominio debe ser @gescon360.es');
+        return;
+    }
+    
+    const role = confirm('¿Es administrador? (Aceptar para Admin, Cancelar para Usuario)');
+    addUserSecurity(name, email, role ? 'admin' : 'user');
+}
+
+// Add new user to system
+async function addUserSecurity(fullName, email, role = 'user') {
+    console.log('Adding user:', email, 'with role:', role);
+    showLoading();
+    
+    try {
+        // Generate temporary password
+        const tempPassword = Math.random().toString(36).substr(2, 9) + 'Gs360!';
+        
+        // Create user in Supabase Auth
+        const { data: authUser, error: authError } = await supabaseClient.auth.admin.createUser({
+            email: email,
+            password: tempPassword,
+            email_confirm: true
+        });
+        
+        if (authError) throw authError;
+        
+        // Create profile record
+        const { error: profileError } = await supabaseClient
+            .from('profiles')
+            .insert({
+                id: authUser.user.id,
+                full_name: fullName,
+                email: email,
+                role: role,
+                status: 'active',
+                created_at: new Date().toISOString()
+            });
+        
+        if (profileError) throw profileError;
+        
+        showToast('success', 'Éxito', `Usuario ${email} creado. Contraseña temporal: ${tempPassword}`);
+        loadSecurityTable();
+        
+    } catch (error) {
+        console.error('Error adding user:', error);
+        showToast('danger', 'Error', 'No se pudo crear el usuario: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Edit user
+async function editUserSecurity(userId) {
+    const user = usersData.find(u => u.id === userId);
+    if (!user) return;
+    
+    const newRole = confirm(`Cambiar rol de ${user.email}? (Aceptar para Admin, Cancelar para Usuario)`);
+    const newStatus = confirm(`¿Activar usuario? (Aceptar para Activo, Cancelar para Inactivo)`);
+    
+    showLoading();
+    
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({
+                role: newRole ? 'admin' : 'user',
+                status: newStatus ? 'active' : 'inactive'
+            })
+            .eq('id', userId);
+        
+        if (error) throw error;
+        
+        showToast('success', 'Éxito', 'Usuario actualizado correctamente');
+        loadSecurityTable();
+        
+    } catch (error) {
+        console.error('Error updating user:', error);
+        showToast('danger', 'Error', 'No se pudo actualizar el usuario: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Delete user
+async function deleteUserSecurity(userId) {
+    if (!confirm('¿Está seguro de que desea eliminar este usuario?')) return;
+    
+    showLoading();
+    
+    try {
+        // Delete from profiles table
+        const { error: profileError } = await supabaseClient
+            .from('profiles')
+            .delete()
+            .eq('id', userId);
+        
+        if (profileError) throw profileError;
+        
+        // Delete from auth (optional - requires admin key)
+        // For now, just delete from profiles
+        
+        showToast('success', 'Éxito', 'Usuario eliminado correctamente');
+        loadSecurityTable();
+        
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        showToast('danger', 'Error', 'No se pudo eliminar el usuario: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Initialize function to load app after login
+async function initializeApp() {
+    console.log('Initializing app...');
+    try {
+        // Load initial data
+        loadSecurityTable();
+        // Add other initialization calls here
+    } catch (error) {
+        console.error('Error initializing app:', error);
+    }
+}
+
