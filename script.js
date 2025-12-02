@@ -375,11 +375,78 @@ async function registerFirstUser() {
 }
 
 // ============================================================================
+
+// ============================================================================
+// CONTROL DE ACCESO Y ROLES (ROLE-BASED ACCESS CONTROL - RBAC)
+// ============================================================================
+
+// Constantes
+const ADMIN_EMAIL = 'jesus.mp@gescon360.es';
+const ADMIN_ROLE = 'admin';
+const USER_ROLE = 'user';
+
+// Verificar si usuario actual es admin
+function isCurrentUserAdmin() {
+    if (!currentUser) return false;
+    return currentUser.email === ADMIN_EMAIL;
+}
+
+// Verificar permiso para operación de seguridad
+function checkSecurityPermission(requiredRole = ADMIN_ROLE) {
+    if (!currentUser) {
+        showToast('danger', 'Error', 'No estás autenticado');
+        return false;
+    }
+    
+    if (requiredRole === ADMIN_ROLE && !isCurrentUserAdmin()) {
+        showToast('danger', 'Acceso Denegado', 'Solo administradores pueden realizar esta acción');
+        console.warn(`Acceso denegado para ${currentUser.email}: se requiere rol ${requiredRole}`);
+        return false;
+    }
+    
+    return true;
+}
+
+// Ocultar elementos de seguridad para usuarios no-admin
+function enforceSecurityUIRestrictions() {
+    const securityTable = document.getElementById('securityTable');
+    const addUserBtn = document.getElementById('addUserSecurityBtn');
+    
+    if (securityTable) {
+        if (isCurrentUserAdmin()) {
+            securityTable.style.display = 'table';
+        } else {
+            securityTable.style.display = 'none';
+        }
+    }
+    
+    if (addUserBtn) {
+        if (isCurrentUserAdmin()) {
+            addUserBtn.style.display = 'block';
+        } else {
+            addUserBtn.style.display = 'none';
+        }
+    }
+}
+
+// Generar contraseña temporal fuerte
+function generateTemporaryPassword() {
+    const length = 12;
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+}
+
 // TABLA DE SEGURIDAD Y ACCESO - GESTIÓN DE USUARIOS Y PERMISOS
 // ============================================================================
 
 // Load security and access management table
 async function loadSecurityTable() {
+        // Check permission to load security table
+    if (!checkSecurityPermission()) return;
     console.log('Loading Security Table...');
     showLoading();
     
@@ -434,6 +501,9 @@ function renderSecurityTable() {
         `;
         tbody.appendChild(row);
     });
+        
+    // Enforce UI restrictions based on user role
+    enforceSecurityUIRestrictions();
 }
 
 // Setup event listeners for security table
@@ -463,6 +533,8 @@ function showAddUserDialog() {
 
 // Add new user to system
 async function addUserSecurity(fullName, email, role = 'user') {
+        // Check permission to add users
+    if (!checkSecurityPermission()) return;
     console.log('Adding user:', email, 'with role:', role);
     showLoading();
     
@@ -506,6 +578,8 @@ async function addUserSecurity(fullName, email, role = 'user') {
 
 // Edit user
 async function editUserSecurity(userId) {
+        // Check permission to edit users
+    if (!checkSecurityPermission()) return;
     const user = usersData.find(u => u.id === userId);
     if (!user) return;
     
@@ -538,6 +612,8 @@ async function editUserSecurity(userId) {
 
 // Delete user
 async function deleteUserSecurity(userId) {
+        // Check permission to delete users
+    if (!checkSecurityPermission()) return;
     if (!confirm('¿Está seguro de que desea eliminar este usuario?')) return;
     
     showLoading();
@@ -571,9 +647,11 @@ async function initializeApp() {
     try {
         // Load initial data
         loadSecurityTable();
+            enforceSecurityUIRestrictions();
         // Add other initialization calls here
     } catch (error) {
         console.error('Error initializing app:', error);
     }
 }
+
 
