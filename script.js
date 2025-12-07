@@ -12,7 +12,8 @@
 
 // Configuración de Supabase
 const SUPABASE_URL = 'https://atgzvhyuhynvjdljhlon.supabase.co';
-const SUPABASE_ANON_KEY = 'AQUÍ_PEGAS_TU_CLAVE_ANON_REAL_Y_MUY_LARGA'; // <-- PEGA LA NUEVA CLAVE AQUÍ
+// !IMPORTANTE! Reemplaza 'AQUÍ_PEGAS_TU_CLAVE_ANON_REAL_Y_MUY_LARGA' con tu clave real de Supabase
+const SUPABASE_ANON_KEY = 'AQUÍ_PEGAS_TU_CLAVE_ANON_REAL_Y_MUY_LARGA'; 
 
 // Inicializar cliente de Supabase
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -198,20 +199,10 @@ function checkUsers() {
     
     // ESTA FUNCIÓN DEBERÁ SER REEMPLAZADA
     // Por ahora, simulamos que no hay usuarios para mostrar la alerta.
-    document.getElementById('loginAlert').style.display = 'flex';
-
-    /* Código original de Apps Script (a reemplazar):
-    google.script.run.withSuccessHandler(function(hasUsers) {
-        console.log(`Users check result: ${hasUsers}`);
-        
-        if (!hasUsers) {
-            document.getElementById('loginAlert').style.display = 'flex';
-        }
-    }).withFailureHandler(function(error) {
-        handleGASError(error, 'verificación de usuarios');
-        document.getElementById('loginAlert').style.display = 'flex';
-    }).hasUsers();
-    */
+    const loginAlert = document.getElementById('loginAlert');
+    if (loginAlert) {
+        loginAlert.style.display = 'flex';
+    }
 }
 
 // Setup event listeners
@@ -376,6 +367,232 @@ async function registerFirstUser() {
 }
 
 // ============================================================================
+// FUNCIONES DE NAVEGACIÓN E INTERACCIÓN DE LA UI (AÑADIDAS PARA CORREGIR ERRORES)
+// ============================================================================
+
+// Muestra una sección específica y oculta las demás
+function showSection(sectionId) {
+    // Oculta todas las secciones
+    document.querySelectorAll('.content-section').forEach(section => {
+        section.classList.remove('active');
+    });
+
+    // Quita la clase active de todos los enlaces del menú
+    document.querySelectorAll('.sidebar-menu a').forEach(link => {
+        link.classList.remove('active');
+    });
+
+    // Muestra la sección seleccionada
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) {
+        targetSection.classList.add('active');
+    }
+
+    // Resalta el enlace del menú activo
+    const activeLink = document.querySelector(`.sidebar-menu a[onclick="showSection('${sectionId}')"]`);
+    if (activeLink) {
+        activeLink.classList.add('active');
+    }
+    
+    // Actualiza el título de la página
+    const pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) {
+        const titles = {
+            'dashboard': 'Dashboard',
+            'import': 'Importar Expedientes',
+            'tasks': 'Gestión de Tareas',
+            'duplicates': 'Duplicados',
+            'reports': 'Reportes',
+            'archive': 'Archivados',
+            'config': 'Configuración',
+            'admin': 'Gestión de Responsables',
+            'workload': 'Distribución de Carga',
+            'limits': 'Límites del Sistema',
+            'users': 'Gestión de Usuarios'
+        };
+        pageTitle.textContent = titles[sectionId] || 'GESCON 360';
+    }
+}
+
+// Alterna la visibilidad de la barra lateral en móviles
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.toggle('active');
+    }
+}
+
+// Cierra un modal
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+// Muestra el modal de notificaciones
+function showNotifications() {
+    const modal = document.getElementById('notificationModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+// ============================================================================
+// FUNCIONES PLACEHOLDER (PARA EVITAR ERRORES DE ONCLICK)
+// ============================================================================
+
+function searchExpedients() {
+    console.log('Función searchExpedients llamada');
+    showToast('info', 'En desarrollo', 'La función de búsqueda de expedientes está en desarrollo.');
+}
+
+function clearSearch() {
+    console.log('Función clearSearch llamada');
+    document.getElementById('searchExpedient').value = '';
+    document.getElementById('searchPolicy').value = '';
+    document.getElementById('searchSGR').value = '';
+    document.getElementById('searchDNI').value = '';
+    document.getElementById('searchResults').style.display = 'none';
+    showToast('info', 'Limpio', 'Los campos de búsqueda han sido limpiados.');
+}
+
+function advancedSearch() {
+    console.log('Función advancedSearch llamada');
+    showToast('info', 'En desarrollo', 'La búsqueda avanzada estará disponible próximamente.');
+}
+
+function addNewTask() {
+    console.log('Función addNewTask llamada');
+    const modal = document.getElementById('taskModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function saveTask() {
+    console.log('Función saveTask llamada');
+    showToast('info', 'En desarrollo', 'La función para guardar tareas está en desarrollo.');
+    closeModal('taskModal');
+}
+
+function filterTasks() {
+    console.log('Función filterTasks llamada');
+    showToast('info', 'En desarrollo', 'El filtrado de tareas estará disponible próximamente.');
+}
+
+function processAllDuplicates() {
+    console.log('Función processAllDuplicates llamada');
+    showToast('info', 'En desarrollo', 'Procesamiento masivo de duplicados en desarrollo.');
+}
+
+function deleteAllDuplicates() {
+    console.log('Función deleteAllDuplicates llamada');
+    showToast('info', 'En desarrollo', 'Eliminación masiva de duplicados en desarrollo.');
+}
+
+function addUser() {
+    console.log('Función addUser llamada');
+    const modal = document.getElementById('userModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function saveUser() {
+    console.log('Función saveUser llamada');
+    showToast('info', 'En desarrollo', 'La función para guardar usuarios está en desarrollo.');
+    closeModal('userModal');
+}
+
+function addResponsible() {
+    console.log('Función addResponsible llamada');
+    const modal = document.getElementById('responsibleModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function saveResponsible() {
+    console.log('Función saveResponsible llamada');
+    showToast('info', 'En desarrollo', 'La función para guardar responsables está en desarrollo.');
+    closeModal('responsibleModal');
+}
+
+function distributeWorkload() {
+    console.log('Función distributeWorkload llamada');
+    showToast('success', 'Distribución', 'La carga de trabajo se ha distribuido equitativamente (simulado).');
+}
+
+function resetWorkloadConfig() {
+    console.log('Función resetWorkloadConfig llamada');
+    showToast('info', 'Restablecido', 'La configuración de carga de trabajo ha sido restablecida a sus valores predeterminados.');
+}
+
+function saveWorkloadConfig() {
+    console.log('Función saveWorkloadConfig llamada');
+    showToast('success', 'Guardado', 'La configuración de carga de trabajo ha sido guardada correctamente (simulado).');
+}
+
+function resetLimits() {
+    console.log('Función resetLimits llamada');
+    showToast('info', 'Restablecido', 'Los límites del sistema han sido restablecidos a sus valores predeterminados.');
+}
+
+function saveLimits() {
+    console.log('Función saveLimits llamada');
+    showToast('success', 'Guardado', 'Los límites del sistema han sido guardados correctamente (simulado).');
+}
+
+function exportReport() {
+    console.log('Función exportReport llamada');
+    showToast('info', 'En desarrollo', 'La función de exportación de reportes estará disponible próximamente.');
+}
+
+function searchArchive() {
+    console.log('Función searchArchive llamada');
+    showToast('info', 'En desarrollo', 'La búsqueda en el archivo estará disponible próximamente.');
+}
+
+function viewArchived(id) {
+    console.log('Función viewArchived llamada para:', id);
+    showToast('info', 'En desarrollo', `La vista detallada del expediente ${id} estará disponible próximamente.`);
+}
+
+function restoreExpedient(id) {
+    console.log('Función restoreExpedient llamada para:', id);
+    if (confirm(`¿Está seguro de que desea restaurar el expediente ${id}?`)) {
+        showToast('success', 'Restaurado', `El expediente ${id} ha sido restaurado (simulado).`);
+    }
+}
+
+function resetConfig() {
+    console.log('Función resetConfig llamada');
+    showToast('info', 'Restablecido', 'La configuración del sistema ha sido restablecida.');
+}
+
+function saveConfig() {
+    console.log('Función saveConfig llamada');
+    showToast('success', 'Guardado', 'La configuración del sistema ha sido guardada correctamente (simulado).');
+}
+
+function previewImport() {
+    console.log('Función previewImport llamada');
+    showToast('info', 'En desarrollo', 'La vista previa de importación estará disponible próximamente.');
+}
+
+function importarExpedientes() {
+    console.log('Función importarExpedientes llamada');
+    showToast('info', 'En desarrollo', 'La función de importación de expedientes está en desarrollo.');
+}
+
+function openDatePicker(element, id) {
+    console.log('Función openDatePicker llamada para:', id);
+    showToast('info', 'En desarrollo', 'El selector de fecha estará disponible próximamente.');
+}
+
+
+// ============================================================================
 // CONTROL DE ACCESO Y ROLES (ROLE-BASED ACCESS CONTROL - RBAC)
 // ============================================================================
 
@@ -444,7 +661,7 @@ function generateTemporaryPassword() {
 
 // Load security and access management table
 async function loadSecurityTable() {
-    // Check permission to load security table
+        // Check permission to load security table
     if (!checkSecurityPermission()) return;
     console.log('Loading Security Table...');
     showLoading();
@@ -532,7 +749,7 @@ function showAddUserDialog() {
 
 // Add new user to system
 async function addUserSecurity(fullName, email, role = 'user') {
-    // Check permission to add users
+        // Check permission to add users
     if (!checkSecurityPermission()) return;
     console.log('Adding user:', email, 'with role:', role);
     showLoading();
@@ -577,7 +794,7 @@ async function addUserSecurity(fullName, email, role = 'user') {
 
 // Edit user
 async function editUserSecurity(userId) {
-    // Check permission to edit users
+        // Check permission to edit users
     if (!checkSecurityPermission()) return;
     const user = usersData.find(u => u.id === userId);
     if (!user) return;
@@ -611,7 +828,7 @@ async function editUserSecurity(userId) {
 
 // Delete user
 async function deleteUserSecurity(userId) {
-    // Check permission to delete users
+        // Check permission to delete users
     if (!checkSecurityPermission()) return;
     if (!confirm('¿Está seguro de que desea eliminar este usuario?')) return;
     
@@ -637,3 +854,18 @@ async function deleteUserSecurity(userId) {
         showToast('danger', 'Error', 'No se pudo eliminar el usuario: ' + error.message);
     } finally {
         hideLoading();
+    }
+}
+
+// Initialize function to load app after login
+async function initializeApp() {
+    console.log('Initializing app...');
+    try {
+        // Load initial data
+        // loadSecurityTable();
+        // enforceSecurityUIRestrictions();
+        // Add other initialization calls here
+    } catch (error) {
+        console.error('Error initializing app:', error);
+    }
+}
