@@ -646,12 +646,13 @@ async function initializeApp() {
     console.log('Initializing app...');
     try {
         // Load initial data
-        loadSecurityTable();
-            enforceSecurityUIRestrictions();
+//         loadSecurityTable();
+            // enforceSecurityUIRestrictions();
         // Add other initialization calls here
     } catch (error) {
         console.error('Error initializing app:', error);
     }
 }
+
 
 
