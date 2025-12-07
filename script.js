@@ -12,8 +12,9 @@
 
 // Configuración de Supabase
 const SUPABASE_URL = 'https://atgzvhyuhynvjdljhlon.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0Z3p2aHl1aHludmpkbGpobG9uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwOTA4MDUsImV4cCI6MjA4MDY2NjgwNX0.m80znGD6ete70Ytq5R2BbM9VOU0aPzaciWr1-o8vTP8';
-//// Inicializar cliente de Supabasee
+const SUPABASE_ANON_KEY = 'AQUÍ_PEGAS_TU_CLAVE_ANON_REAL_Y_MUY_LARGA'; // <-- PEGA LA NUEVA CLAVE AQUÍ
+
+// Inicializar cliente de Supabase
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Global Variables
@@ -327,7 +328,7 @@ async function login() {
         loginButton.disabled = false;
         showToast('danger', 'Error de autenticación', error.message || 'Correo o contraseña incorrectos');
     }
-} // ← cierre correcto de login()
+}
 
 // Logout function
 async function logout() {
@@ -373,8 +374,6 @@ async function registerFirstUser() {
         showToast('danger', 'Error', 'Error al crear usuario: ' + error.message);
     }
 }
-
-// ============================================================================
 
 // ============================================================================
 // CONTROL DE ACCESO Y ROLES (ROLE-BASED ACCESS CONTROL - RBAC)
@@ -445,7 +444,7 @@ function generateTemporaryPassword() {
 
 // Load security and access management table
 async function loadSecurityTable() {
-        // Check permission to load security table
+    // Check permission to load security table
     if (!checkSecurityPermission()) return;
     console.log('Loading Security Table...');
     showLoading();
@@ -533,7 +532,7 @@ function showAddUserDialog() {
 
 // Add new user to system
 async function addUserSecurity(fullName, email, role = 'user') {
-        // Check permission to add users
+    // Check permission to add users
     if (!checkSecurityPermission()) return;
     console.log('Adding user:', email, 'with role:', role);
     showLoading();
@@ -578,7 +577,7 @@ async function addUserSecurity(fullName, email, role = 'user') {
 
 // Edit user
 async function editUserSecurity(userId) {
-        // Check permission to edit users
+    // Check permission to edit users
     if (!checkSecurityPermission()) return;
     const user = usersData.find(u => u.id === userId);
     if (!user) return;
@@ -612,7 +611,7 @@ async function editUserSecurity(userId) {
 
 // Delete user
 async function deleteUserSecurity(userId) {
-        // Check permission to delete users
+    // Check permission to delete users
     if (!checkSecurityPermission()) return;
     if (!confirm('¿Está seguro de que desea eliminar este usuario?')) return;
     
@@ -638,25 +637,3 @@ async function deleteUserSecurity(userId) {
         showToast('danger', 'Error', 'No se pudo eliminar el usuario: ' + error.message);
     } finally {
         hideLoading();
-    }
-}
-
-// Initialize function to load app after login
-async function initializeApp() {
-    console.log('Initializing app...');
-    try {
-        // Load initial data
-//         loadSecurityTable();
-            // enforceSecurityUIRestrictions();
-        // Add other initialization calls here
-    } catch (error) {
-        console.error('Error initializing app:', error);
-    }
-}
-
-
-
-
-
-
-
