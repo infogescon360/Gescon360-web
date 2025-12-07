@@ -12,7 +12,7 @@
 
 // Configuración de Supabase
 const SUPABASE_URL = 'https://atgzvhyuhynvjdljhlon.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF0Z3p2aHl1aHludmpkbGpobG9uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM1NzYyMDYsImV4cCI6MjA0OTE1MjIwNn0.Brv_Z-xJaXZ3nVo1kRHqmtD9i0tEvSWZH4bkROG1EsY';// Inicializar cliente de Supabase
+const SUPABASE_ANON_KEY = 'sb_publishable_uvutv0vWxSBOUcME-376CQ_Brv_Z-xJ';//// Inicializar cliente de Supabasee
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Global Variables
@@ -652,6 +652,7 @@ async function initializeApp() {
         console.error('Error initializing app:', error);
     }
 }
+
 
 
 
