@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- 1. ENLACE A TU ARCHIVO CSS (LÍNEA AÑADIDA/CORREGIDA) -->
+    <!-- ENLACE A TU ARCHIVO CSS -->
     <link rel="stylesheet" href="style.css">
         
     <!-- Supabase Client Library -->
@@ -75,10 +75,10 @@
                         <span id="loginSpinner" class="loading d-none"></span>
                     </button>
                                     
-                <!-- Botón temporal de registro -->
-                <button type="button" class="btn-custom btn-outline-custom mt-2 w-100 id="createAdminButton"100" onclick="registerFirstUser()" style="background: #ff9800; color: white; border: none;">
-                    Crear Usuario Admin (TEMPORAL)
-                </button>
+                    <!-- Botón temporal de registro -->
+                    <button type="button" class="btn-custom btn-outline-custom mt-2 w-100" id="createAdminButton" onclick="registerFirstUser()" style="background: #ff9800; color: white; border: none;">
+                        Crear Usuario Admin (TEMPORAL)
+                    </button>
                 </div>
             </form>
         </div>
@@ -119,14 +119,12 @@
             </div>
         </aside>
 
-
-        \n                <!-- Tabla de Seguridad y Acceso -->\n                <table id="securityTable" class="table table-striped">\n                    <thead class="table-dark">\n                        <tr>\n                            <th>ID</th>\n                            <th>Nombre</th>\n                            <th>Email</th>\n                            <th>Rol</th>\n                            <th>Estado</th>\n                            <th>Acciones</th>\n                        </tr>\n                    </thead>\n                    <tbody>\n                        <!-- Usuarios se cargarán aquí desde JavaScript -->\n                    </tbody>\n                </table>\n                <button id="addUserSecurityBtn" class="btn btn-primary mt-3">Agregar Usuario</button>
         <!-- Main Content -->
         <main class="main-content">
             <!-- Top Bar con Logo -->
             <div class="top-bar">
                 <div class="logo-link">
-                    <!-- 2. RUTA CORREGIDA DEL LOGO (LÍNEA CORREGIDA) -->
+                    <!-- RUTA CORREGIDA DEL LOGO -->
                     <img src="images/logo.png" alt="Logo Gescon360" class="logo-img">
                     <span class="logo-text">GESCON 360</span>
                 </div>
@@ -544,6 +542,24 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Tabla de Seguridad y Acceso -->
+                <table id="securityTable" class="table table-striped">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Nombre</th>
+                            <th>Email</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Usuarios se cargarán aquí desde JavaScript -->
+                    </tbody>
+                </table>
+                <button id="addUserSecurityBtn" class="btn btn-primary mt-3">Agregar Usuario</button>
             </section>
 
             <!-- Admin Section -->
@@ -850,7 +866,8 @@ jmpenalvo@gmail.com</textarea>
                             </tbody>
                         </table>
                     </div>
-                </section>
+                </div>
+            </section>
 
             <!-- Archive Section -->
             <section id="archive" class="content-section">
@@ -901,7 +918,8 @@ jmpenalvo@gmail.com</textarea>
                             </tbody>
                         </table>
                     </div>
-                </section>
+                </div>
+            </section>
 
             <!-- Config Section -->
             <section id="config" class="content-section">
@@ -1200,12 +1218,7 @@ jmpenalvo@gmail.com</textarea>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- 3. ENLACE A TU ARCHIVO JAVASCRIPT (LÍNEA AÑADIDA) -->
-    <script src="script.js defer"></script>
+    <!-- ENLACE A TU ARCHIVO JAVASCRIPT -->
+    <script src="script.js" defer></script>
 </body>
-
 </html>
-
-
-
-
