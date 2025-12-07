@@ -11,7 +11,7 @@
  */
 
 // Configuración de Supabase
-const SUPABASE_URL = 'https://atgzvhyuhynvjdljhlon.supabase.co';const SUPABASE_ANON_KEY = 'sb_publishable_pIkhbDqBb0v9LLQcf3drog_BO2reqkF';
+const SUPABASE_URL = 'https://atgzvhyuhynvjdljhlon.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uuutv0WxsBOUcME-376CQ_Brv_Z-xJ';// Inicializar cliente de Supabase
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -652,6 +652,7 @@ async function initializeApp() {
         console.error('Error initializing app:', error);
     }
 }
+
 
 
 
