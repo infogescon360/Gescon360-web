@@ -885,6 +885,130 @@ async function initializeApp() {
     }
 }
 
+// ============================================================================
+// FUNCIONES CLIENTE PARA GESTIÓN DE ROLES DE ADMINISTRADOR
+// ============================================================================
+
+// URL del servidor backend (ajusta según tu despliegue)
+const ADMIN_API_URL = 'http://localhost:3000'; // Cambiar a tu URL de producción
+
+/**
+ * Cambiar rol de administrador de un usuario
+ * @param {string} targetUserId - ID del usuario a modificar
+ * @param {boolean} makeAdmin - true para promover, false para revocar
+ * @returns {Promise<Object>} Resultado de la operación
+ */
+async function setAdminRole(targetUserId, makeAdmin) {
+  try {
+    // Obtener el access token del usuario actual
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    
+    if (!session) {
+      throw new Error('No hay sesión activa');
+    }
+    
+    const accessToken = session.access_token;
+    
+    // Llamar al endpoint server-side
+    const response = await fetch(`${ADMIN_API_URL}/admin/set-admin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        targetUserId,
+        makeAdmin
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Error al cambiar rol');
+    }
+    
+    console.log('✓ Rol actualizado:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('Error cambiando rol de administrador:', error);
+    throw error;
+  }
+}
+
+/**
+ * Verificar si el usuario actual es administrador
+ * @returns {Promise<boolean>} true si es admin, false si no
+ */
+async function checkIfCurrentUserIsAdmin() {
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    
+    if (!session) {
+      return false;
+    }
+    
+    const response = await fetch(`${ADMIN_API_URL}/admin/check`, {
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`
+      }
+    });
+    
+    const result = await response.json();
+    return result.isAdmin === true;
+    
+  } catch (error) {
+    console.error('Error verificando rol de administrador:', error);
+    return false;
+  }
+}
+
+/**
+ * Ejemplo de uso en UI: botón para promover/revocar admin
+ */
+async function handleAdminButtonClick(userId, currentlyAdmin) {
+  try {
+    const action = currentlyAdmin ? 'revocar' : 'promover';
+    
+    if (!confirm(`¿Estás seguro de ${action} permisos de administrador para este usuario?`)) {
+      return;
+    }
+    
+    const result = await setAdminRole(userId, !currentlyAdmin);
+    
+    showToast('success', 'Éxito', result.message);
+    
+    // Recargar lista de usuarios o actualizar UI
+    // loadSecurityTable(); // Descomentar para refrescar la tabla
+    
+  } catch (error) {
+    showToast('danger', 'Error', error.message);
+  }
+}
+
+/**
+ * Inicialización: verificar si usuario actual es admin al cargar la página
+ */
+async function initializeAdminUI() {
+  const isAdmin = await checkIfCurrentUserIsAdmin();
+  
+  if (isAdmin) {
+    console.log('✓ Usuario actual tiene permisos de administrador');
+    // Mostrar elementos de UI de administración
+    document.querySelectorAll('.admin-only').forEach(el => {
+      el.style.display = 'block';
+    });
+  } else {
+    console.log('Usuario actual NO es administrador');
+    // Ocultar elementos de UI de administración
+    document.querySelectorAll('.admin-only').forEach(el => {
+      el.style.display = 'none';
+    });
+  }
+}
+
+
 
 
 
