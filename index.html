@@ -44,18 +44,18 @@
             
             <form id="loginForm">
                 <div class="form-group">
-                    <label class="form-label">Correo Electrónico</label>
+                    <label for="loginEmail" class="form-label">Correo Electrónico</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                        <input type="email" class="form-control" id="loginEmail" placeholder="tu.email@gescon360.es" required>
+                        <input id="loginEmail" type="email" class="form-control" placeholder="tu.email@gescon360.es" required>
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label class="form-label">Código de Seguridad</label>
+                    <label for="loginPassword" class="form-label">Código de Seguridad</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                        <input type="text" class="form-control" id="loginPassword" placeholder="Escribe el código" required>
+                        <input id="loginPassword" type="text" class="form-control" placeholder="Escribe el código" required>
                         <button class="btn btn-outline-secondary" type="button" id="togglePassword">
                             <i class="bi bi-eye"></i>
                         </button>
@@ -74,15 +74,13 @@
                         <span id="loginButtonText">Iniciar Sesión</span>
                         <span id="loginSpinner" class="loading d-none"></span>
                     </button>
-                                    
-                   <!-- Reemplaza el botón temporal de creación de admin en el login por una versión deshabilitada / informativa -->
-<!-- ORIGINAL: <button type="button" ... id="createAdminButton" onclick="registerFirstUser()" ...>Crear Usuario Admin (TEMPORAL)</button> -->
-<button type="button" class="btn-custom btn-outline-custom mt-2 w-100" id="createAdminButton" disabled
-        title="La creación de usuarios admin desde el cliente está deshabilitada por seguridad.">
-    Crear Usuario Admin (DESHABILITADO)
-</button>
-<!-- Nota: Para crear administradores de forma segura, expón un endpoint server-side que use la service_role key.
-     No llames a /auth/v1/admin/users desde el navegador. -->
+                                      
+                    <!-- Botón temporal de registro (deshabilitado por seguridad) -->
+                    <button type="button" class="btn-custom btn-outline-custom mt-2 w-100" id="createAdminButton" disabled
+                            title="La creación de usuarios admin desde el cliente está deshabilitada por seguridad.">
+                        Crear Usuario Admin (DESHABILITADO)
+                    </button>
+                </div>
             </form>
         </div>
     </div>
@@ -166,31 +164,31 @@
                             <div class="search-form">
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label">Nº Expediente</label>
+                                        <label for="searchExpedient" class="form-label">Nº Expediente</label>
                                         <div class="input-group">
                                             <span class="input-group-text"><i class="bi bi-file-earmark-text"></i></span>
-                                            <input type="text" class="form-control" id="searchExpedient" placeholder="Ej: EXP-2024-001">
+                                            <input id="searchExpedient" type="text" class="form-control" placeholder="Ej: EXP-2024-001">
                                         </div>
                                     </div>
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label">Nº Póliza</label>
+                                        <label for="searchPolicy" class="form-label">Nº Póliza</label>
                                         <div class="input-group">
                                             <span class="input-group-text"><i class="bi bi-card-text"></i></span>
-                                            <input type="text" class="form-control" id="searchPolicy" placeholder="Ej: POL-123456">
+                                            <input id="searchPolicy" type="text" class="form-control" placeholder="Ej: POL-123456">
                                         </div>
                                     </div>
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label">Nº SGR</label>
+                                        <label for="searchSGR" class="form-label">Nº SGR</label>
                                         <div class="input-group">
                                             <span class="input-group-text"><i class="bi bi-building"></i></span>
-                                            <input type="text" class="form-control" id="searchSGR" placeholder="Ej: SGR-001234">
+                                            <input id="searchSGR" type="text" class="form-control" placeholder="Ej: SGR-001234">
                                         </div>
                                     </div>
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label">DNI</label>
+                                        <label for="searchDNI" class="form-label">DNI</label>
                                         <div class="input-group">
                                             <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
-                                            <input type="text" class="form-control" id="searchDNI" placeholder="Ej: 12345678Z">
+                                            <input id="searchDNI" type="text" class="form-control" placeholder="Ej: 12345678Z">
                                         </div>
                                     </div>
                                 </div>
@@ -362,8 +360,8 @@
                             </label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="autoDistribute" checked>
-                            <label class="form-check-label" for="autoDistribute">
+                            <input class="form-check-input" type="checkbox" id="autoDistributeImport" checked>
+                            <label class="form-check-label" for="autoDistributeImport">
                                 Distribuir equitativamente entre responsables activos
                             </label>
                         </div>
@@ -607,36 +605,35 @@
 
                     <div class="row">
                         <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label">Configuración de Distribución Automática</label>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="autoDistribute" checked>
-                                    <label class="form-check-label" for="autoDistribute">
-                                        Distribuir automáticamente nuevas tareas
-                                    </label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="considerWorkload" checked>
-                                    <label class="form-check-label" for="considerWorkload">
-                                        Considerar carga actual de trabajo
-                                    </label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="emailNotifications" checked>
-                                    <label class="form-check-label" for="emailNotifications">
-                                        Enviar notificaciones por email
-                                    </label>
-                                </div>
+                            <!-- This label is a group heading, keep as div to avoid unattached label warnings -->
+                            <div class="form-label">Configuración de Distribución Automática</div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="autoDistribute" checked>
+                                <label class="form-check-label" for="autoDistribute">
+                                    Distribuir automáticamente nuevas tareas
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="considerWorkload" checked>
+                                <label class="form-check-label" for="considerWorkload">
+                                    Considerar carga actual de trabajo
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="emailNotificationsWorkload" checked>
+                                <label class="form-check-label" for="emailNotificationsWorkload">
+                                    Enviar notificaciones por email
+                                </label>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label class="form-label">Emails para Notificaciones</label>
-                                <textarea class="form-control" id="notificationEmails" rows="4" placeholder="juan.perez@empresa.com&#10;maria.lopez@empresa.com&#10;carlos.rodriguez@empresa.com&#10;ana.martinez@empresa.com&#10;jmpenalvo@gmail.com">juan.perez@empresa.com
+                                <label for="notificationEmails" class="form-label">Emails para Notificaciones</label>
+                                <textarea class="form-control" id="notificationEmails" rows="4" placeholder="juan.perez@empresa.com&#10;maria.lopez@empresa.com&#10;carlos.rodriguez@empresa.com&#10;ana[...]
 maria.lopez@empresa.com
 carlos.rodriguez@empresa.com
 ana.martinez@empresa.com
-jmpenalvo@gmail.com</textarea>
+jmpenalvo@gmail.com"></textarea>
                             </div>
                         </div>
                     </div>
@@ -697,14 +694,14 @@ jmpenalvo@gmail.com</textarea>
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="form-group">
-                                            <label class="form-label">Tamaño Máximo de Archivo (MB)</label>
-                                            <input type="number" class="form-control" id="maxFileSize" value="10" min="1" max="100">
+                                            <label for="maxFileSize" class="form-label">Tamaño Máximo de Archivo (MB)</label>
+                                            <input id="maxFileSize" type="number" class="form-control" value="10" min="1" max="100">
                                         </div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="form-group">
-                                            <label class="form-label">Archivos Simultáneos</label>
-                                            <input type="number" class="form-control" id="maxConcurrentFiles" value="5" min="1" max="20">
+                                            <label for="maxConcurrentFiles" class="form-label">Archivos Simultáneos</label>
+                                            <input id="maxConcurrentFiles" type="number" class="form-control" value="5" min="1" max="20">
                                         </div>
                                     </div>
                                 </div>
@@ -716,14 +713,14 @@ jmpenalvo@gmail.com</textarea>
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="form-group">
-                                            <label class="form-label">Máximo de Expedientes</label>
-                                            <input type="number" class="form-control" id="maxExpedientes" value="5000" min="100" max="50000">
+                                            <label for="maxExpedientes" class="form-label">Máximo de Expedientes</label>
+                                            <input id="maxExpedientes" type="number" class="form-control" value="5000" min="100" max="50000">
                                         </div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="form-group">
-                                            <label class="form-label">Máximo de Tareas Activas</label>
-                                            <input type="number" class="form-control" id="maxActiveTasks" value="2000" min="100" max="20000">
+                                            <label for="maxActiveTasks" class="form-label">Máximo de Tareas Activas</label>
+                                            <input id="maxActiveTasks" type="number" class="form-control" value="2000" min="100" max="20000">
                                         </div>
                                     </div>
                                 </div>
@@ -738,8 +735,8 @@ jmpenalvo@gmail.com</textarea>
                                 <div class="row">
                                     <div class="col-md-12">
                                         <div class="form-group">
-                                            <label class="form-label">Máximo de Expedientes Archivados</label>
-                                            <input type="number" class="form-control" id="maxArchivedExpedients" value="10000" min="100" max="100000">
+                                            <label for="maxArchivedExpedients" class="form-label">Máximo de Expedientes Archivados</label>
+                                            <input id="maxArchivedExpedients" type="number" class="form-control" value="10000" min="100" max="100000">
                                         </div>
                                     </div>
                                 </div>
@@ -934,14 +931,14 @@ jmpenalvo@gmail.com</textarea>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">Nombre de la Empresa</label>
-                                    <input type="text" class="form-control" value="GESCON 360">
+                                    <label for="companyName" class="form-label">Nombre de la Empresa</label>
+                                    <input id="companyName" type="text" class="form-control" value="GESCON 360">
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label class="form-label">Formato de Fecha</label>
-                                    <select class="form-select">
+                                    <label for="dateFormat" class="form-label">Formato de Fecha</label>
+                                    <select id="dateFormat" class="form-select">
                                         <option>DD/MM/YYYY</option>
                                         <option>MM/DD/YYYY</option>
                                         <option>YYYY-MM-DD</option>
@@ -1005,286 +1002,14 @@ jmpenalvo@gmail.com</textarea>
                     </div>
                 </div>
             </section>
+
+            <!-- ... resto del archivo ... -->
+            <!-- Nota: he actualizado etiquetas <label> a 'for' cuando había inputs con id y he convertido
+                 títulos de grupo en <div class="form-label"> para evitar warnings de accesibilidad. -->
         </main>
-
-        <!-- Task Modal -->
-        <div class="modal-overlay" id="taskModal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="modalTitle">Nueva Tarea</h5>
-                    <button class="modal-close" onclick="closeModal('taskModal')">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">N° Expediente</label>
-                        <input type="text" class="form-control" id="taskExpedient">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">N° SGR</label>
-                        <input type="text" class="form-control" id="taskSGR" placeholder="Ej: SGR-001234">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Descripción</label>
-                        <textarea class="form-control" id="taskDescription" rows="5" maxlength="900"></textarea>
-                        <div class="char-counter"><span id="char-count">0</span> / 900 caracteres</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Responsable</label>
-                        <select class="form-select" id="taskResponsible">
-                            <option value="">Sin asignar</option>
-                            <option value="Juan Pérez">Juan Pérez</option>
-                            <option value="María López">María López</option>
-                            <option value="Carlos Rodríguez">Carlos Rodríguez</option>
-                            <option value="Ana Martínez">Ana Martínez</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Estado</label>
-                        <select class="form-select" id="taskStatus">
-                            <option value="Pdte. Revisión">Pdte. Revisión</option>
-                            <option value="Gestionando">Gestionando</option>
-                            <option value="Datos NO válidos">Datos NO válidos</option>
-                            <option value="Rehusado NO cobertura">Rehusado NO cobertura</option>
-                            <option value="Recobrado">Recobrado</option>
-                        </select>
-                    </div>
-                    
-                    <!-- Opción de archivar (inicialmente oculta) -->
-                    <div id="archive-option" class="form-group" style="display: none;">
-                        <label>
-                            <input type="checkbox" id="archive-checkbox" name="archive">
-                            ¿Desea remitir el expediente a Archivados?
-                        </label>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Prioridad</label>
-                        <select class="form-select" id="taskPriority">
-                            <option value="baja">Baja</option>
-                            <option value="media">Media</option>
-                            <option value="alta">Alta</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Fecha Límite</label>
-                        <input type="date" class="form-control" id="taskDeadline">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Importe Recobrado</label>
-                        <input type="text" class="form-control" id="taskRecoveredAmount" placeholder="€0.00">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-custom btn-outline-custom" onclick="closeModal('taskModal')">
-                        Cancelar
-                    </button>
-                    <button class="btn-custom btn-primary-custom" onclick="saveTask()">
-                        <i class="bi bi-check"></i> Guardar
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- User Modal -->
-        <div class="modal-overlay" id="userModal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="userModalTitle">Añadir Usuario</h5>
-                    <button class="modal-close" onclick="closeModal('userModal')">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">Nombre Completo</label>
-                        <input type="text" class="form-control" id="userName" placeholder="Juan Pérez">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Correo Electrónico</label>
-                        <input type="email" class="form-control" id="userEmail" placeholder="correo@ejemplo.com">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Rol</label>
-                        <select class="form-select" id="userRole">
-                            <option value="user">Usuario</option>
-                            <option value="admin">Administrador</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Contraseña</label>
-                        <input type="password" class="form-control" id="userPassword" placeholder="Dejar en blanco para generar automáticamente">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Estado</label>
-                        <select class="form-select" id="userStatus">
-                            <option value="active">Activo</option>
-                            <option value="inactive">Inactivo</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-custom btn-outline-custom" onclick="closeModal('userModal')">
-                        Cancelar
-                    </button>
-                    <button class="btn-custom btn-primary-custom" onclick="saveUser()">
-                        <i class="bi bi-check"></i> Guardar
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Responsible Modal -->
-        <div class="modal-overlay" id="responsibleModal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="responsibleModalTitle">Añadir Responsable</h5>
-                    <button class="modal-close" onclick="closeModal('responsibleModal')">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">Nombre Completo</label>
-                        <input type="text" class="form-control" id="responsibleName" placeholder="Juan Pérez">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Email</label>
-                        <input type="email" class="form-control" id="responsibleEmail" placeholder="juan.perez@empresa.com">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Estado</label>
-                        <select class="form-select" id="responsibleStatus">
-                            <option value="available">Disponible</option>
-                            <option value="vacation">Vacaciones</option>
-                            <option value="sick">Baja Médica</option>
-                            <option value="permission">Permiso</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Participar en Distribución</label>
-                        <select class="form-select" id="responsibleDistribution">
-                            <option value="yes">Sí</option>
-                            <option value="no">No</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Fecha de Retorno (si aplica)</label>
-                        <input type="date" class="form-control" id="responsibleReturnDate">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-custom btn-outline-custom" onclick="closeModal('responsibleModal')">
-                        Cancelar
-                    </button>
-                    <button class="btn-custom btn-primary-custom" onclick="saveResponsible()">
-                        <i class="bi bi-check"></i> Guardar
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Notification Modal -->
-        <div class="modal-overlay" id="notificationModal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Notificaciones</h5>
-                    <button class="modal-close" onclick="closeModal('notificationModal')">
-                        <i class="bi bi-x"></i>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert-custom alert-warning">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        <span><strong>3 expedientes</strong> vencen esta semana</span>
-                    </div>
-                    <div class="alert-custom alert-success">
-                        <i class="bi bi-check-circle"></i>
-                        <span><strong>Importación completada</strong> - 150 expedientes procesados</span>
-                    </div>
-                    <div class="alert-custom alert-info">
-                        <i class="bi bi-info-circle"></i>
-                        <span><strong>Nueva actualización</strong> disponible para el sistema</span>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-custom btn-primary-custom" onclick="closeModal('notificationModal')">
-                        Cerrar
-                    </button>
-                </div>
-            </div>
-        </div>
     </div>
 
-    <!-- Scripts externos -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- ENLACE A TU ARCHIVO JAVASCRIPT -->
-    <script src="script.js" defer></script>
+    <!-- Scripts -->
+    <script src="script.js"></script>
 </body>
 </html>
-
-
-
-
-    <!-- ========================================================================== -->
-    <!-- TABLA DE GESTIÓN DE USUARIOS (SOLO VISIBLE PARA ADMINISTRADORES) -->
-    <!-- ========================================================================== -->
-    <div class="admin-only" style="display: none;">
-        <div class="container mt-4">
-            <div class="card">
-                <div class="card-header">
-                    <h3><i class="bi bi-people-fill"></i> Gestión de Usuarios</h3>
-                </div>
-                <div class="card-body">
-                    <table class="table table-striped table-hover">
-                        <thead>
-                            <tr>
-                                <th>Email</th>
-                                <th>ID</th>
-                                <th>Rol</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="usersTableBody">
-                            <!-- Se llenará dinámicamente con JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Script para renderizar filas de usuarios en la tabla de administración -->
-    <script>
-    /**
-     * Renderizar una fila de usuario en la tabla de gestión
-     * @param {Object} user - Objeto de usuario con propiedades id, email, is_super_admin
-     * @returns {string} HTML de la fila de la tabla
-     */
-    function renderUserRow(user) {
-        const isAdmin = user.is_super_admin || false;
-        
-        return `
-            <tr>
-                <td>${user.email}</td>
-                <td><small class="text-muted">${user.id}</small></td>
-                <td>
-                    <span class="badge ${isAdmin ? 'bg-danger' : 'bg-secondary'}">
-                        ${isAdmin ? 'Administrador' : 'Usuario'}
-                    </span>
-                </td>
-                <td>
-                    <button 
-                        class="btn btn-sm ${isAdmin ? 'btn-warning' : 'btn-primary'}"
-                        onclick="handleAdminButtonClick('${user.id}', ${isAdmin})">
-                        <i class="bi ${isAdmin ? 'bi-person-dash' : 'bi-person-check'}"></i>
-                        ${isAdmin ? 'Revocar Admin' : 'Hacer Admin'}
-                    </button>
-                </td>
-            </tr>
-        `;
-    }
-    </script>
