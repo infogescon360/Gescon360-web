@@ -80,7 +80,7 @@ function hideLoading() {
     if (el) el.classList.remove('show');
 }
 
-// Show toast notification
+// Show toast notification (con fallback si bootstrap no está cargado)
 function showToast(type, title, message) {
     let toastContainer = document.getElementById('toastContainer');
     if (!toastContainer) {
@@ -89,6 +89,55 @@ function showToast(type, title, message) {
         toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
         document.body.appendChild(toastContainer);
     }
+
+    const toastId = 'toast-' + Date.now();
+    const toastHtml = `
+        <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-${type} text-white">
+                <strong class="me-auto">${title}</strong>
+                <small>Ahora</small>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toastElement = document.getElementById(toastId);
+
+    // Si bootstrap está disponible, usar su Toast; si no, fallback a un alert y eliminar el elemento
+    if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Toast) {
+        try {
+            const toast = new bootstrap.Toast(toastElement);
+            toast.show();
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+            return;
+        } catch (e) {
+            console.warn('Bootstrap toast fallo, usando fallback:', e);
+        }
+    }
+
+    // Fallback simple: mostrar pequeño banner y auto-eliminarlo después de 5s
+    try {
+        toastElement.classList.add('fallback-toast');
+        // Simple styles en línea si no existen estilos
+        toastElement.style.background = '#fff';
+        toastElement.style.border = '1px solid rgba(0,0,0,0.1)';
+        toastElement.style.padding = '0.5rem';
+        setTimeout(() => {
+            if (toastElement && toastElement.parentNode) toastElement.parentNode.removeChild(toastElement);
+        }, 5000);
+    } catch (e) {
+        // último recurso: alert()
+        // eslint-disable-next-line no-alert
+        alert(`${title}\n\n${message}`);
+        if (toastElement && toastElement.parentNode) toastElement.parentNode.removeChild(toastElement);
+    }
+}
 
     const toastId = 'toast-' + Date.now();
     const toastHtml = `
@@ -371,4 +420,5 @@ async function logout() {
 
 const ADMIN_EMAIL = 'jesus.mp@gescon360.es';
 const
+
 
