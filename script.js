@@ -193,16 +193,31 @@ async function checkAuthStatus() {
     }
 }
 
-// Check if there are registered users
-function checkUsers() {
-    console.log('Checking if users exist...');
-    
-    // ESTA FUNCIÓN DEBERÁ SER REEMPLAZADA
-    // Por ahora, simulamos que no hay usuarios para mostrar la alerta.
-    const loginAlert = document.getElementById('loginAlert');
-    if (loginAlert) {
-        loginAlert.style.display = 'flex';
+// ----- Seguridad: deshabilitar la creación de usuarios admin desde el cliente -----
+// Reemplaza la implementación actual de registerFirstUser por esta NO-OP segura.
+// Si prefieres no sobrescribir, añade esta función al final de script.js para
+// que anule la definición previa (la última definición gana en JS).
+
+function registerFirstUser(...args) {
+  // Evitar cualquier intento de usar la Admin API desde el navegador.
+  console.warn('registerFirstUser() llamada en cliente bloqueada por seguridad. Use un endpoint server-side para crear usuarios admin.');
+  // Mostrar mensaje amigable al usuario (opcional). Puedes eliminar el alert si no quieres notificaciones.
+  try {
+    // Intentamos mostrar un mensaje en pantalla si existe un contenedor de alertas
+    const alertContainer = document.getElementById('loginAlert') || document.getElementById('debugConsole');
+    if (alertContainer) {
+      alertContainer.style.display = 'block';
+      alertContainer.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> La creación de administradores desde el cliente está deshabilitada por seguridad. Contacta con el administrador del sistema.';
+    } else {
+      // fallback
+      // eslint-disable-next-line no-alert
+      alert('La creación de administradores desde el cliente está deshabilitada por seguridad. Contacta con el administrador del sistema.');
     }
+  } catch (e) {
+    // No bloquear la ejecución por errores de UI
+  }
+  // No realizar ninguna llamada de red ni modificar el estado.
+  return Promise.resolve({ error: 'client_creation_disabled' });
 }
 
 // Setup event listeners
@@ -869,6 +884,7 @@ async function initializeApp() {
         console.error('Error initializing app:', error);
     }
 }
+
 
 
 
