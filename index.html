@@ -75,11 +75,14 @@
                         <span id="loginSpinner" class="loading d-none"></span>
                     </button>
                                     
-                    <!-- Botón temporal de registro -->
-                    <button type="button" class="btn-custom btn-outline-custom mt-2 w-100" id="createAdminButton" onclick="registerFirstUser()" style="background: #ff9800; color: white; border: none;">
-                        Crear Usuario Admin (TEMPORAL)
-                    </button>
-                </div>
+                   <!-- Reemplaza el botón temporal de creación de admin en el login por una versión deshabilitada / informativa -->
+<!-- ORIGINAL: <button type="button" ... id="createAdminButton" onclick="registerFirstUser()" ...>Crear Usuario Admin (TEMPORAL)</button> -->
+<button type="button" class="btn-custom btn-outline-custom mt-2 w-100" id="createAdminButton" disabled
+        title="La creación de usuarios admin desde el cliente está deshabilitada por seguridad.">
+    Crear Usuario Admin (DESHABILITADO)
+</button>
+<!-- Nota: Para crear administradores de forma segura, expón un endpoint server-side que use la service_role key.
+     No llames a /auth/v1/admin/users desde el navegador. -->
             </form>
         </div>
     </div>
@@ -1222,4 +1225,5 @@ jmpenalvo@gmail.com</textarea>
     <script src="script.js" defer></script>
 </body>
 </html>
+
 
