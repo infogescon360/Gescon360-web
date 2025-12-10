@@ -5,6 +5,7 @@
 //   SUPABASE_ANON_KEY (public anon key)
 //   SUPABASE_SERVICE_ROLE_KEY (secret service_role key - NUNCA en cliente)
 
+import 'dotenv/config';
 import express from 'express';
 import fetch from 'node-fetch'; // o usa fetch nativo en Node 18+
 import cors from 'cors';
