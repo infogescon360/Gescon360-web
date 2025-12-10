@@ -1227,3 +1227,64 @@ jmpenalvo@gmail.com</textarea>
 </html>
 
 
+
+
+    <!-- ========================================================================== -->
+    <!-- TABLA DE GESTIÓN DE USUARIOS (SOLO VISIBLE PARA ADMINISTRADORES) -->
+    <!-- ========================================================================== -->
+    <div class="admin-only" style="display: none;">
+        <div class="container mt-4">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="bi bi-people-fill"></i> Gestión de Usuarios</h3>
+                </div>
+                <div class="card-body">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>ID</th>
+                                <th>Rol</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <!-- Se llenará dinámicamente con JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script para renderizar filas de usuarios en la tabla de administración -->
+    <script>
+    /**
+     * Renderizar una fila de usuario en la tabla de gestión
+     * @param {Object} user - Objeto de usuario con propiedades id, email, is_super_admin
+     * @returns {string} HTML de la fila de la tabla
+     */
+    function renderUserRow(user) {
+        const isAdmin = user.is_super_admin || false;
+        
+        return `
+            <tr>
+                <td>${user.email}</td>
+                <td><small class="text-muted">${user.id}</small></td>
+                <td>
+                    <span class="badge ${isAdmin ? 'bg-danger' : 'bg-secondary'}">
+                        ${isAdmin ? 'Administrador' : 'Usuario'}
+                    </span>
+                </td>
+                <td>
+                    <button 
+                        class="btn btn-sm ${isAdmin ? 'btn-warning' : 'btn-primary'}"
+                        onclick="handleAdminButtonClick('${user.id}', ${isAdmin})">
+                        <i class="bi ${isAdmin ? 'bi-person-dash' : 'bi-person-check'}"></i>
+                        ${isAdmin ? 'Revocar Admin' : 'Hacer Admin'}
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+    </script>
