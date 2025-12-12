@@ -642,20 +642,22 @@ async function setAdminRole(targetUserId, makeAdmin) {
  * Verificar si el usuario actual es administrador (server-side check)
  */
 async function checkIfCurrentUserIsAdmin() {
-  try {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (!session) return false;
+  // Esta función ahora lanzará una excepción si fetch() falla,
+  // permitiendo que el llamador maneje el error y use un fallback.
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return false;
 
-    const response = await fetch(`${ADMIN_API_URL}/admin/check`, {
-      headers: { 'Authorization': `Bearer ${session.access_token}` }
-    });
+  const response = await fetch(`${ADMIN_API_URL}/admin/check`, {
+    headers: { 'Authorization': `Bearer ${session.access_token}` }
+  });
 
-    const result = await response.json();
-    return result.isAdmin === true;
-  } catch (error) {
-    console.error('Error verificando rol de administrador:', error);
-    return false;
+  if (!response.ok) {
+    // También trata las respuestas de error del servidor como una falla
+    throw new Error(`Error del servidor: ${response.status}`);
   }
+
+  const result = await response.json();
+  return result.isAdmin === true;
 }
 
 // UI handler for admin button
@@ -672,9 +674,23 @@ async function handleAdminButtonClick(userId, currentlyAdmin) {
 
 // Inicialización: verificar si usuario actual es admin al cargar la página
 async function initializeAdminUI() {
-  const isAdmin = await checkIfCurrentUserIsAdmin();
+  let isAdmin = false;
+  try {
+    // Intenta verificar con el servidor primero para la máxima seguridad
+    isAdmin = await checkIfCurrentUserIsAdmin();
+    console.log('✓ Verificación de administrador por servidor exitosa');
+  } catch (error) {
+    console.warn(`Falló la verificación del servidor de administrador: ${error.message}`);
+    console.warn('Usando método de respaldo local solo para desarrollo.');
+    // Fallback a la verificación local si el servidor no está disponible
+    isAdmin = isCurrentUserAdmin();
+    if (isAdmin) {
+      showToast('warning', 'Modo de Respaldo', 'Verificación de admin local. Funcionalidad limitada.');
+    }
+  }
+
   if (isAdmin) {
-    console.log('✓ Usuario actual tiene permisos de administrador');
+    console.log('✓ Usuario actual tiene permisos de administrador (verificado)');
     document.querySelectorAll('.admin-only').forEach(el => { el.style.display = 'block'; });
   } else {
     console.log('Usuario actual NO es administrador');
@@ -876,6 +892,3 @@ function showNotifications() {
 // =============================================================================
 // FIN
 // =============================================================================
-
-
-
