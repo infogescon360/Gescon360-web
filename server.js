@@ -174,6 +174,14 @@ app.get('/admin/check', async (req, res) => {
   }
 });
 
+// Endpoint para obtener la configuración de Supabase
+app.get('/config', (req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+  });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

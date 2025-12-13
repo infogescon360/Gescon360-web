@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+        style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com;
+        font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com https://r2cdn.perplexity.ai;
+        connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net;
+        img-src 'self' data:;
+    ">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GESCON 360 - Sistema Integral de Gestión de Expedientes</title>
