@@ -12,6 +12,7 @@ import cors from 'cors';
 const app = express();
 app.use(express.json());
 app.use(cors()); // Configura CORS según tus necesidades
+app.use(express.static('public'))
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
