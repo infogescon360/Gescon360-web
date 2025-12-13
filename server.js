@@ -12,6 +12,7 @@ import cors from 'cors';
 const app = express();
 app.use(express.json());
 app.use(cors()); // Configura CORS según tus necesidades
+app.use(express.static('public')); // Servir archivos estáticos desde el directorio 'public'
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
@@ -176,6 +177,14 @@ app.get('/admin/check', async (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// GET /config - Provide public Supabase config to frontend
+app.get('/config', (req, res) => {
+  res.json({
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_ANON_KEY,
+  });
 });
 
 const PORT = process.env.PORT || 3000;
