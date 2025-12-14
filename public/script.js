@@ -718,8 +718,28 @@ function previewImport() {
 
 function importarExpedientes() {
     console.log('Función importarExpedientes llamada');
-    showToast('info', 'En desarrollo', 'La función de importación de expedientes está en desarrollo.');
-}
+    // Implementación básica de importación de expedientes
+    const fileInput = document.getElementById('fileInput');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showToast('warning', 'Sin archivo', 'Por favor selecciona un archivo CSV o Excel para importar.');
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    showLoading();
+    
+    try {
+        showToast('success', 'Importando', 'La funcionalidad de importación está en desarrollo. Pronto estará disponible.');
+        // TODO: Implementar parseo de CSV/Excel
+        // TODO: Validar estructura de datos
+        // TODO: Detectar duplicados
+        // TODO: Insertar en Supabase
+    } catch (error) {
+        console.error('Error importando expedientes:', error);
+        showToast('danger', 'Error', 'Error al importar expedientes: ' + error.message);
+    } finally {
+        hideLoading();
+    }}
 
 function openDatePicker(element, id) {
     console.log('Función openDatePicker llamada para:', id);
