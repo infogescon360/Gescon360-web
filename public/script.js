@@ -1,266 +1,1131 @@
-// /script.js
+/*
+ * =============================================================================
+ * GESCON 360 - Frontend JavaScript
+ * =============================================================================
+ *
+ * ESTE ES EL CÓDIGO ORIGINAL DE GOOGLE APPS SCRIPT.
+ *
+ * PRÓXIMO PASO: Reemplazar todas las llamadas a 'google.script.run'
+ * por llamadas 'fetch' a nuestras funciones de Netlify.
+ * =============================================================================
+ */
 
-// ============================================================================
-// CONFIGURACIÓN E INICIALIZACIÓN DE SUPABASE
-// ============================================================================
-// IMPORTANTE: Estas son claves de ejemplo. Deben ser reemplazadas por las
-// credenciales reales del proyecto en un entorno de producción.
-// ============================================================================
+// Configuración de Supabase - Se cargarán desde el servidor
+let supabaseClient = null;
 
-let supabase;
-
-async function initializeSupabase() {
+// Función para cargar configuración y arrancar
+async function initAppConfig() {
     try {
         const response = await fetch('/config');
-        if (!response.ok) {
-            throw new Error(`Error fetching config: ${response.statusText}`);
-        }
+        if (!response.ok) throw new Error('No se pudo cargar la configuración');
         const config = await response.json();
 
         if (!config.supabaseUrl || !config.supabaseAnonKey) {
-            throw new Error('Supabase URL or Anon Key is missing in config.');
+            throw new Error('Configuración de Supabase incompleta');
         }
 
-        if (window.supabase) {
-            supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-            console.log('Supabase client initialized with dynamic config.');
-        } else {
-            throw new Error('Supabase library not loaded.');
-        }
+        // Inicializar cliente
+        supabaseClient = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+        console.log('Supabase initialized');
+
+        // Continuar con el flujo normal
+        checkAuthStatus();
+        setupEventListeners();
+        setupCharCounter();
+        setupStatusArchiveLogic();
+
     } catch (error) {
-        console.error('Failed to initialize Supabase client:', error);
-        alert('Critical Error: Could not connect to the database. The application will not function.');
+        console.error('Error de inicialización:', error);
+        const errorMsg = error.message.includes('Failed to fetch')
+            ? 'No se pudo conectar con el servidor. ¿Has ejecutado "npm start"? ¿Estás accediendo a localhost:3000?'
+            : error.message;
+
+        document.body.innerHTML = `
+            <div class="container mt-5">
+                <div class="alert alert-danger">
+                    <h4><i class="bi bi-exclamation-octagon"></i> Error de Inicialización</h4>
+                    <p>${errorMsg}</p>
+                    <hr>
+                    <p class="mb-0">Por favor, asegúrate de:</p>
+                    <ol>
+                        <li>Tener el archivo <code>.env</code> configurado.</li>
+                        <li>Ejecutar <code>npm start</code> en la terminal.</li>
+                        <li>Acceder a <a href="http://localhost:3000">http://localhost:3000</a> (no abrir el archivo directamente).</li>
+                    </ol>
+                </div>
+            </div>`;
     }
 }
 
-// ============================================================================
-// LÓGICA DE AUTENTICACIÓN
-// ============================================================================
+// Global Variables
+let currentSection = 'dashboard';
+let currentUser = null;
+let expedientesData = [];
+let tasksData = [];
+let duplicatesData = [];
+let currentDate = new Date();
+let pickerDate = new Date();
+let selectedDateElement = null;
+let selectedDateId = null;
+let selectedDateValue = null;
+let editingResponsibleId = null;
+let usersData = [];
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Initialize Supabase
-    await initializeSupabase();
+// System Limits
+let systemLimits = {
+    maxFileSize: 10, // MB
+    maxConcurrentFiles: 5,
+    maxExpedientes: 5000,
+    maxActiveTasks: 2000,
+    maxArchivedExpedientes: 10000
+};
 
-    // 2. Revisar si hay una sesión activa al cargar la página
-    checkSession();
+// Responsible persons data
+let responsiblesData = [
+    { id: 1, name: 'Juan Pérez', email: 'juan.perez@empresa.com', status: 'available', distribution: 'yes', activeTasks: 5, completedTasks: 23 },
+    { id: 2, name: 'María López', email: 'maria.lopez@empresa.com', status: 'vacation', distribution: 'no', activeTasks: 0, completedTasks: 18, returnDate: '2024-12-20' },
+    { id: 3, name: 'Carlos Rodríguez', email: 'carlos.rodriguez@empresa.com', status: 'available', distribution: 'yes', activeTasks: 3, completedTasks: 31 },
+    { id: 4, name: 'Ana Martínez', email: 'ana.martinez@empresa.com', status: 'sick', distribution: 'no', activeTasks: 0, completedTasks: 15, returnDate: '2024-12-15' }
+];
 
-    // 2. Asignar el manejador de eventos al formulario de login
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
+// Visual Debugger - DESACTIVADO
+function visualDebugger() {
+    // Desactivado para ocultar el panel de depuración
+}
+
+// Debug function - DESACTIVADO
+function debug(message, type = 'info') {
+    // Desactivado para ocultar el panel de depuración
+}
+
+// Handle Google Apps Script errors
+function handleGASError(error, operation) {
+    console.error(`Error in ${operation}: ${error.message}`);
+    showToast('danger', 'Error', `Ha ocurrido un error en ${operation}: ${error.message}`);
+    hideLoading();
+}
+
+// Show/hide loading overlay
+function showLoading() {
+    document.getElementById('loadingOverlay').classList.add('show');
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('show');
+}
+
+// Show toast notification
+function showToast(type, title, message) {
+    // Create toast container if it doesn't exist
+    let toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toastContainer';
+        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
     }
+
+    // Create toast element
+    const toastId = 'toast-' + Date.now();
+    const toastHtml = `
+        <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-${type} text-white">
+                <strong class="me-auto">${title}</strong>
+                <small>Ahora</small>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+
+    // Show toast
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+
+    // Remove toast after hidden
+    toastElement.addEventListener('hidden.bs.toast', function () {
+        toastElement.remove();
+    });
+}
+
+// Initialize Application
+document.addEventListener('DOMContentLoaded', function () {
+    // Visual debugger desactivado
+    console.log('Application initialized');
+
+    // Iniciar carga de configuración
+    initAppConfig();
 });
 
-async function checkSession() {
-    // Esta función es un placeholder. La funcionalidad real de sesión de Supabase
-    // es manejada a través de su sistema de tokens y localStorage.
-    // Aquí, simulamos una comprobación para mostrar la app si el token existe.
+// Configurar el contador de caracteres
+function setupCharCounter() {
+    const textarea = document.getElementById('taskDescription');
+    const charCount = document.getElementById('char-count');
 
-    const sessionToken = localStorage.getItem('supabase.auth.token');
-    if (sessionToken) {
-        try {
-            const session = JSON.parse(sessionToken);
-            // Podríamos añadir una validación del token aquí si fuese necesario
-            if (session && session.user) {
-                console.log('Sesión encontrada. Mostrando la aplicación.');
-                showApp();
-            }
-        } catch (e) {
-            console.error('Error al parsear el token de sesión:', e);
-            localStorage.removeItem('supabase.auth.token'); // Limpiar token corrupto
-        }
-    } else {
-        console.log('No se encontró sesión. Mostrando formulario de login.');
+    if (textarea && charCount) {
+        textarea.addEventListener('input', () => {
+            charCount.textContent = textarea.value.length;
+        });
     }
 }
 
-async function handleLogin(event) {
-    event.preventDefault();
-    setLoading(true);
+// Configurar la lógica de estados y archivado
+function setupStatusArchiveLogic() {
+    const statusSelect = document.getElementById('taskStatus');
+    const archiveOption = document.getElementById('archive-option');
 
+    if (statusSelect && archiveOption) {
+        statusSelect.addEventListener('change', () => {
+            const finalStates = ['Datos NO válidos', 'Rehusado NO cobertura', 'Recobrado'];
+
+            if (finalStates.includes(statusSelect.value)) {
+                archiveOption.style.display = 'block'; // Muestra la opción
+            } else {
+                archiveOption.style.display = 'none';  // Oculta la opción
+                document.getElementById('archive-checkbox').checked = false; // Resetea el checkbox
+            }
+        });
+    }
+}
+
+// Check authentication status
+async function checkAuthStatus() {
+    console.log('Checking authentication status...');
+    showLoading();
+
+    try {
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
+
+        if (error) throw error;
+
+        hideLoading();
+
+        if (session && session.user) {
+            // Verificar si es admin consultando al servidor
+            const token = session.access_token;
+            let isAdmin = false;
+            try {
+                const adminCheck = await fetch('/admin/check', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (adminCheck.ok) {
+                    const adminData = await adminCheck.json();
+                    isAdmin = adminData.isAdmin;
+                }
+            } catch (e) {
+                console.warn('Could not verify admin status', e);
+            }
+
+            currentUser = {
+                email: session.user.email,
+                name: session.user.email.split('@')[0],
+                id: session.user.id,
+                isAdmin: isAdmin
+            };
+            showApp();
+            initializeApp();
+        } else {
+            showAuth();
+        }
+    } catch (error) {
+        console.error('Error checking auth status:', error);
+        hideLoading();
+        showAuth();
+    }
+}
+
+// ----- Seguridad: deshabilitar la creación de usuarios admin desde el cliente -----
+// Reemplaza la implementación actual de registerFirstUser por esta NO-OP segura.
+// Si prefieres no sobrescribir, añade esta función al final de script.js para
+// que anule la definición previa (la última definición gana en JS).
+
+function registerFirstUser(...args) {
+    // Evitar cualquier intento de usar la Admin API desde el navegador.
+    console.warn('registerFirstUser() llamada en cliente bloqueada por seguridad. Use un endpoint server-side para crear usuarios admin.');
+    // Mostrar mensaje amigable al usuario (opcional). Puedes eliminar el alert si no quieres notificaciones.
+    try {
+        // Intentamos mostrar un mensaje en pantalla si existe un contenedor de alertas
+        const alertContainer = document.getElementById('loginAlert') || document.getElementById('debugConsole');
+        if (alertContainer) {
+            alertContainer.style.display = 'block';
+            alertContainer.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> La creación de administradores desde el cliente está deshabilitada por seguridad. Contacta con el administrador del sistema.';
+        } else {
+            // fallback
+            // eslint-disable-next-line no-alert
+            alert('La creación de administradores desde el cliente está deshabilitada por seguridad. Contacta con el administrador del sistema.');
+        }
+    } catch (e) {
+        // No bloquear la ejecución por errores de UI
+    }
+    // No realizar ninguna llamada de red ni modificar el estado.
+    return Promise.resolve({ error: 'client_creation_disabled' });
+}
+
+// Setup event listeners
+function setupEventListeners() {
+    console.log('Setting up event listeners...');
+
+    // Login form
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            console.log('Login form submitted');
+            login();
+        });
+    }
+
+    // Toggle password visibility
+    const togglePassword = document.getElementById('togglePassword');
+    if (togglePassword) {
+        togglePassword.addEventListener('click', function () {
+            togglePasswordVisibility('loginPassword', 'togglePassword');
+        });
+    }
+}
+
+// Toggle password visibility
+function togglePasswordVisibility(inputId, buttonId) {
+    const input = document.getElementById(inputId);
+    const button = document.getElementById(buttonId);
+    const icon = button.querySelector('i');
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+    }
+}
+
+// Hide create admin button after first user is created
+function hideCreateAdminButton() {
+    const createAdminBtn = document.getElementById('createAdminButton');
+    if (createAdminBtn) {
+        createAdminBtn.style.display = 'none';
+    }
+}
+
+// Show/hide main containers
+function showAuth() {
+    console.log('Showing auth container');
+    document.getElementById('authContainer').classList.remove('d-none');
+    document.getElementById('appContainer').classList.add('d-none');
+}
+
+function showApp() {
+    console.log('Showing app container');
+    const authContainer = document.getElementById('authContainer');
+    const appContainer = document.getElementById('appContainer');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+
+    // Force hide/show using inline styles (stronger than classes)
+    authContainer.classList.add('d-none');
+    authContainer.style.display = 'none'; // Inline override
+
+    appContainer.classList.remove('d-none');
+    appContainer.style.display = 'block'; // Inline override
+
+    // Force hide loading overlay
+    loadingOverlay.classList.remove('show');
+    loadingOverlay.style.display = 'none'; // Inline override
+
+    // DEBUG: Verificar si realmente se mostró
+    console.log('Auth classes:', authContainer.className);
+    console.log('App classes:', appContainer.className);
+    console.log('App style display:', window.getComputedStyle(appContainer).display);
+
+    // Check if external CSS is loaded
+    const isCssLoaded = Array.from(document.styleSheets).some(s => s.href && s.href.includes('style.css'));
+    console.log('style.css loaded:', isCssLoaded);
+
+    // CRITICAL FIX: Inject fallback styles in case CSS failed or is overridden
+    const fallbackStyle = document.createElement('style');
+    fallbackStyle.innerHTML = `
+        #appContainer { display: block !important; width: 100vw !important; height: 100vh !important; overflow: auto !important; }
+        .sidebar { width: 250px !important; height: 100vh !important; display: block !important; position: fixed !important; z-index: 1000 !important; background: #2c3e50; color: white; }
+        .main-content { margin-left: 250px !important; width: calc(100vw - 250px) !important; display: block !important; height: 100% !important; }
+        #dashboard { display: block !important; width: 100% !important; }
+    `;
+    document.head.appendChild(fallbackStyle);
+    console.log('Injected fallback CSS for layout safety');
+
+    // DEBUG: Layout check
+    const sidebar = document.querySelector('.sidebar');
+    const main = document.querySelector('.main-content');
+    const dashboard = document.getElementById('dashboard');
+
+    // Log appContainer specifically
+    const appContainerRect = appContainer.getBoundingClientRect();
+    console.log('AppContainer dimensions:', appContainerRect.width, 'x', appContainerRect.height);
+    console.log('Window dimensions:', window.innerWidth, 'x', window.innerHeight);
+
+    console.log('Sidebar dimensions:', sidebar ? sidebar.getBoundingClientRect() : 'MISSING');
+    console.log('Main dimensions:', main ? main.getBoundingClientRect() : 'MISSING');
+    console.log('Dashboard dimensions:', dashboard ? dashboard.getBoundingClientRect() : 'MISSING');
+    console.log('Dashboard classes:', dashboard ? dashboard.className : 'MISSING');
+    console.log('Dashboard display:', dashboard ? window.getComputedStyle(dashboard).display : 'MISSING');
+
+    // Forzar visibilidad de los hijos clave por si el CSS falla
+    if (sidebar) {
+        sidebar.classList.add('active');
+        sidebar.style.display = 'block';
+        sidebar.style.width = '250px';
+        // sidebar.style.border = '5px solid blue'; // Removing disruptive debug border
+        sidebar.style.zIndex = '9999';
+        sidebar.style.opacity = '1';
+        sidebar.style.visibility = 'visible';
+    }
+
+    if (main) {
+        main.style.display = 'block';
+        main.style.marginLeft = '250px';
+        // main.style.border = '5px solid green'; // Removing disruptive debug border
+        main.style.minHeight = '100vh'; // Ensure it takes height
+        main.style.zIndex = '1';
+        main.style.opacity = '1';
+        main.style.visibility = 'visible';
+
+
+        // DEBUG: Texto de confirmación (menos intrusivo)
+        console.log('Main content configured');
+    }
+
+    // DEBUG: Verificar si el appContainer tiene contenido HTML real
+    console.log('AppContainer Children count:', appContainer.children.length);
+    console.log('AppContainer First Child:', appContainer.firstElementChild);
+
+    hideLoading();
+}
+
+// Login function
+async function login() {
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
 
-    if (!email || !password) {
-        showAuthError('Por favor, introduce tu email y código de seguridad.');
-        setLoading(false);
-        return;
-    }
+    // Validate domain
     if (!email.endsWith('@gescon360.es')) {
-        showAuthError('El email debe pertenecer al dominio @gescon360.es.');
-        setLoading(false);
+        showToast('danger', 'Error de validación', 'El dominio del correo debe ser @gescon360.es');
         return;
     }
 
-    try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-            // Only show a generic error message. Do not reveal if the user exists.
-            throw new Error('Credenciales inválidas. Por favor, verifica tu email y código de seguridad.');
-        }
-        await verifyAdminAndGrantAccess(data.session);
-    } catch (error) {
-        console.error('Error en el inicio de sesión:', error.message);
-        showAuthError(error.message); // Muestra el mensaje de error específico
-    } finally {
-        setLoading(false);
-    }
-}
+    console.log('Login attempt with email:', email);
 
-async function verifyAdminAndGrantAccess(session) {
-    if (!session || !session.user) {
-        showAuthError('La sesión de autenticación no es válida.');
-        return;
-    }
-
-    try {
-        // Usa una ruta relativa para la llamada al backend
-        const response = await fetch('/admin/check', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-
-        // Si la respuesta no es OK (p.ej. 500, 404), entra en el fallback si es el admin
-        if (!response.ok) {
-            if (session.user.email === 'jesus.mp@gescon360.es') {
-                console.warn(`El backend devolvió un estado ${response.status}. Usando fallback para el administrador.`);
-                grantAdminAccessFallback();
-                return;
-            } else {
-                // Para otros usuarios, es un error
-                throw new Error('No se pudo verificar el estado de administrador.');
-            }
-        }
-
-        const data = await response.json();
-        if (data.isAdmin) {
-            console.log(`Acceso concedido para el administrador: ${session.user.email}`);
-            localStorage.setItem('supabase.auth.token', JSON.stringify(session));
-            showApp();
-        } else {
-            showAuthError('No tienes permisos de administrador.');
-            await supabase.auth.signOut();
-        }
-    } catch (error) {
-        console.error('Error verificando el estado de admin:', error);
-        if (session.user.email === 'jesus.mp@gescon360.es') {
-            console.warn('Error de red al contactar el backend. Usando fallback para el administrador.');
-            grantAdminAccessFallback();
-        } else {
-            showAuthError('Error de red al verificar permisos. Inténtalo de nuevo.');
-        }
-    }
-}
-
-function grantAdminAccessFallback() {
-    console.log('Acceso de administrador concedido mediante fallback local.');
-    showApp(true);
-}
-
-function showApp(isFallback = false) {
-    const authContainer = document.getElementById('authContainer');
-    const appContainer = document.getElementById('appContainer');
-    const userNameEl = document.getElementById('userName');
-
-    if (isFallback) {
-        userNameEl.textContent = 'Admin (Fallback)';
-    } else {
-        const session = JSON.parse(localStorage.getItem('supabase.auth.token'));
-        if (session && session.user && session.user.email) {
-            userNameEl.textContent = session.user.email.split('@')[0];
-        }
-    }
-
-    authContainer.classList.add('d-none');
-    appContainer.classList.remove('d-none');
-}
-
-function showAuthError(message) {
-    console.error(`Auth Error: ${message}`);
-    alert(message);
-}
-
-function setLoading(isLoading) {
-    const loginButton = document.getElementById('loginButton');
+    // Show loading
     const loginButtonText = document.getElementById('loginButtonText');
     const loginSpinner = document.getElementById('loginSpinner');
+    const loginButton = document.getElementById('loginButton');
 
-    if (isLoading) {
-        loginButton.disabled = true;
-        loginButtonText.textContent = 'Verificando...';
-        loginSpinner.classList.remove('d-none');
-    } else {
-        loginButton.disabled = false;
-        loginButtonText.textContent = 'Iniciar Sesión';
+    loginButtonText.classList.add('d-none');
+    loginSpinner.classList.remove('d-none');
+    loginButton.disabled = true;
+
+    try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+
+        if (error) throw error;
+
+        // Hide loading
+        loginButtonText.classList.remove('d-none');
         loginSpinner.classList.add('d-none');
-    }
-}
+        loginButton.disabled = false;
 
-async function logout() {
-    console.log('Cerrando sesión...');
+        if (data.user) {
+            // Verificar admin tras login
+            const token = data.session.access_token;
+            let isAdmin = false;
+            try {
+                const adminCheck = await fetch('/admin/check', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (adminCheck.ok) {
+                    const adminData = await adminCheck.json();
+                    isAdmin = adminData.isAdmin;
+                }
+            } catch (e) {
+                console.warn('Could not verify admin status', e);
+            }
 
-    // 1. Limpiar el token de sesión
-    localStorage.removeItem('supabase.auth.token');
-
-    // 2. (Opcional) Llamar a signOut de Supabase para invalidar el token en el servidor
-    if (supabase) {
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-            console.error('Error durante el signOut de Supabase:', error.message);
+            currentUser = {
+                email: data.user.email,
+                name: data.user.email.split('@')[0],
+                id: data.user.id,
+                isAdmin: isAdmin
+            };
+            showApp();
+            initializeApp();
+            hideCreateAdminButton(); // Hide admin button after login
+            showToast('success', 'Bienvenido', 'Has iniciado sesión correctamente');
         }
+    } catch (error) {
+        console.error('Login error:', error);
+        loginButtonText.classList.remove('d-none');
+        loginSpinner.classList.add('d-none');
+        loginButton.disabled = false;
+        showToast('danger', 'Error de autenticación', error.message || 'Correo o contraseña incorrectos');
     }
-
-    // 3. Redirigir a la página de login
-    // En este caso, simplemente mostramos/ocultamos los contenedores
-    const authContainer = document.getElementById('authContainer');
-    const appContainer = document.getElementById('appContainer');
-
-    appContainer.classList.add('d-none');
-    authContainer.classList.remove('d-none');
-
-    // 4. Limpiar el formulario por si acaso
-    const emailInput = document.getElementById('loginEmail');
-    const passwordInput = document.getElementById('loginPassword');
-    if (emailInput) emailInput.value = '';
-    if (passwordInput) passwordInput.value = '';
 }
 
+// Logout function
+async function logout() {
+    console.log('Logout attempt');
+
+    try {
+        const { error } = await supabaseClient.auth.signOut();
+
+        if (error) throw error;
+
+        currentUser = null;
+        showAuth();
+        showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
+    } catch (error) {
+        console.error('Logout error:', error);
+        // Even if there's an error, clear the local session
+        currentUser = null;
+        showAuth();
+        showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
+    }
+}
+
+// Función registerFirstUser eliminada por razones de seguridad (duplicada e insegura).
+// Use la versión segura définie arriba o cree usuarios admin mediante el backend.
+
 // ============================================================================
-// LÓGICA DE LA INTERFAZ DE USUARIO (UI)
+// FUNCIONES DE NAVEGACIÓN E INTERACCIÓN DE LA UI (AÑADIDAS PARA CORREGIR ERRORES)
 // ============================================================================
 
+// Muestra una sección específica y oculta las demás
 function showSection(sectionId) {
-    // Ocultar todas las secciones
-    const sections = document.querySelectorAll('.content-section');
-    sections.forEach(section => {
+    // Oculta todas las secciones
+    document.querySelectorAll('.content-section').forEach(section => {
         section.classList.remove('active');
     });
 
-    // Mostrar la sección seleccionada
-    const activeSection = document.getElementById(sectionId);
-    if (activeSection) {
-        activeSection.classList.add('active');
-    }
-
-    // Actualizar el título de la página
-    const pageTitle = document.getElementById('pageTitle');
-    const sectionLink = document.querySelector(`.sidebar-menu a[onclick="showSection('${sectionId}')"]`);
-    if (pageTitle && sectionLink) {
-        pageTitle.textContent = sectionLink.textContent;
-    }
-
-    // Actualizar el estado activo en el menú de la barra lateral
-    const navLinks = document.querySelectorAll('.sidebar-menu a');
-    navLinks.forEach(link => {
+    // Quita la clase active de todos los enlaces del menú
+    document.querySelectorAll('.sidebar-menu a').forEach(link => {
         link.classList.remove('active');
     });
-    if (sectionLink) {
-        sectionLink.classList.add('active');
+
+    // Muestra la sección seleccionada
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) {
+        targetSection.classList.add('active');
+    }
+
+    // Resalta el enlace del menú activo
+    const activeLink = document.querySelector(`.sidebar-menu a[onclick="showSection('${sectionId}')"]`);
+    if (activeLink) {
+        activeLink.classList.add('active');
+    }
+
+    // Actualiza el título de la página
+    const pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) {
+        const titles = {
+            'dashboard': 'Dashboard',
+            'import': 'Importar Expedientes',
+            'tasks': 'Gestión de Tareas',
+            'duplicates': 'Duplicados',
+            'reports': 'Reportes',
+            'archive': 'Archivados',
+            'config': 'Configuración',
+            'admin': 'Gestión de Responsables',
+            'workload': 'Distribución de Carga',
+            'limits': 'Límites del Sistema',
+            'users': 'Gestión de Usuarios'
+        };
+        pageTitle.textContent = titles[sectionId] || 'GESCON 360';
     }
 }
 
+// Alterna la visibilidad de la barra lateral en móviles
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     if (sidebar) {
-        sidebar.classList.toggle('open');
+        sidebar.classList.toggle('active');
+    }
+}
+
+// Cierra un modal
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+// Muestra el modal de notificaciones
+function showNotifications() {
+    const modal = document.getElementById('notificationModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+// ============================================================================
+// FUNCIONES PLACEHOLDER (PARA EVITAR ERRORES DE ONCLICK)
+// ============================================================================
+
+function searchExpedients() {
+    console.log('Función searchExpedients llamada');
+    showToast('info', 'En desarrollo', 'La función de búsqueda de expedientes está en desarrollo.');
+}
+
+function clearSearch() {
+    console.log('Función clearSearch llamada');
+    document.getElementById('searchExpedient').value = '';
+    document.getElementById('searchPolicy').value = '';
+    document.getElementById('searchSGR').value = '';
+    document.getElementById('searchDNI').value = '';
+    document.getElementById('searchResults').style.display = 'none';
+    showToast('info', 'Limpio', 'Los campos de búsqueda han sido limpiados.');
+}
+
+function advancedSearch() {
+    console.log('Función advancedSearch llamada');
+    showToast('info', 'En desarrollo', 'La búsqueda avanzada estará disponible próximamente.');
+}
+
+function addNewTask() {
+    console.log('Función addNewTask llamada');
+    const modal = document.getElementById('taskModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function saveTask() {
+    console.log('Función saveTask llamada');
+    showToast('info', 'En desarrollo', 'La función para guardar tareas está en desarrollo.');
+    closeModal('taskModal');
+}
+
+function filterTasks() {
+    console.log('Función filterTasks llamada');
+    showToast('info', 'En desarrollo', 'El filtrado de tareas estará disponible próximamente.');
+}
+
+function processAllDuplicates() {
+    console.log('Función processAllDuplicates llamada');
+    showToast('info', 'En desarrollo', 'Procesamiento masivo de duplicados en desarrollo.');
+}
+
+function deleteAllDuplicates() {
+    console.log('Función deleteAllDuplicates llamada');
+    showToast('info', 'En desarrollo', 'Eliminación masiva de duplicados en desarrollo.');
+}
+
+function addUser() {
+    console.log('Función addUser llamada');
+    const modal = document.getElementById('userModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function saveUser() {
+    console.log('Función saveUser llamada');
+    showToast('info', 'En desarrollo', 'La función para guardar usuarios está en desarrollo.');
+    closeModal('userModal');
+}
+
+function addResponsible() {
+    console.log('Función addResponsible llamada');
+    const modal = document.getElementById('responsibleModal');
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function saveResponsible() {
+    console.log('Función saveResponsible llamada');
+    showToast('info', 'En desarrollo', 'La función para guardar responsables está en desarrollo.');
+    closeModal('responsibleModal');
+}
+
+function distributeWorkload() {
+    console.log('Función distributeWorkload llamada');
+    showToast('success', 'Distribución', 'La carga de trabajo se ha distribuido equitativamente (simulado).');
+}
+
+function resetWorkloadConfig() {
+    console.log('Función resetWorkloadConfig llamada');
+    showToast('info', 'Restablecido', 'La configuración de carga de trabajo ha sido restablecida a sus valores predeterminados.');
+}
+
+function saveWorkloadConfig() {
+    console.log('Función saveWorkloadConfig llamada');
+    showToast('success', 'Guardado', 'La configuración de carga de trabajo ha sido guardada correctamente (simulado).');
+}
+
+function resetLimits() {
+    console.log('Función resetLimits llamada');
+    showToast('info', 'Restablecido', 'Los límites del sistema han sido restablecidos a sus valores predeterminados.');
+}
+
+function saveLimits() {
+    console.log('Función saveLimits llamada');
+    showToast('success', 'Guardado', 'Los límites del sistema han sido guardados correctamente (simulado).');
+}
+
+function exportReport() {
+    console.log('Función exportReport llamada');
+    showToast('info', 'En desarrollo', 'La función de exportación de reportes estará disponible próximamente.');
+}
+
+function searchArchive() {
+    console.log('Función searchArchive llamada');
+    showToast('info', 'En desarrollo', 'La búsqueda en el archivo estará disponible próximamente.');
+}
+
+function viewArchived(id) {
+    console.log('Función viewArchived llamada para:', id);
+    showToast('info', 'En desarrollo', `La vista detallada del expediente ${id} estará disponible próximamente.`);
+}
+
+function restoreExpedient(id) {
+    console.log('Función restoreExpedient llamada para:', id);
+    if (confirm(`¿Está seguro de que desea restaurar el expediente ${id}?`)) {
+        showToast('success', 'Restaurado', `El expediente ${id} ha sido restaurado (simulado).`);
+    }
+}
+
+function resetConfig() {
+    console.log('Función resetConfig llamada');
+    showToast('info', 'Restablecido', 'La configuración del sistema ha sido restablecida.');
+}
+
+function saveConfig() {
+    console.log('Función saveConfig llamada');
+    showToast('success', 'Guardado', 'La configuración del sistema ha sido guardada correctamente (simulado).');
+}
+
+function previewImport() {
+    console.log('Función previewImport llamada');
+    showToast('info', 'En desarrollo', 'La vista previa de importación estará disponible próximamente.');
+}
+
+function importarExpedientes() {
+    console.log('Función importarExpedientes llamada');
+    showToast('info', 'En desarrollo', 'La función de importación de expedientes está en desarrollo.');
+}
+
+function openDatePicker(element, id) {
+    console.log('Función openDatePicker llamada para:', id);
+    showToast('info', 'En desarrollo', 'El selector de fecha estará disponible próximamente.');
+}
+
+
+// ============================================================================
+// CONTROL DE ACCESO Y ROLES (ROLE-BASED ACCESS CONTROL - RBAC)
+// ============================================================================
+
+// Constantes
+const ADMIN_EMAIL = 'jesus.mp@gescon360.es';
+const ADMIN_ROLE = 'admin';
+const USER_ROLE = 'user';
+
+// Verificar si usuario actual es admin
+// Verificar si usuario actual es admin
+function isCurrentUserAdmin() {
+    if (!currentUser) return false;
+    return currentUser.isAdmin === true;
+}
+
+// Verificar permiso para operación de seguridad
+function checkSecurityPermission(requiredRole = ADMIN_ROLE) {
+    if (!currentUser) {
+        showToast('danger', 'Error', 'No estás autenticado');
+        return false;
+    }
+
+    if (requiredRole === ADMIN_ROLE && !isCurrentUserAdmin()) {
+        showToast('danger', 'Acceso Denegado', 'Solo administradores pueden realizar esta acción');
+        console.warn(`Acceso denegado para ${currentUser.email}: se requiere rol ${requiredRole}`);
+        return false;
+    }
+
+    return true;
+}
+
+// Ocultar elementos de seguridad para usuarios no-admin
+function enforceSecurityUIRestrictions() {
+    const securityTable = document.getElementById('securityTable');
+    const addUserBtn = document.getElementById('addUserSecurityBtn');
+
+    if (securityTable) {
+        if (isCurrentUserAdmin()) {
+            securityTable.style.display = 'table';
+        } else {
+            securityTable.style.display = 'none';
+        }
+    }
+
+    if (addUserBtn) {
+        if (isCurrentUserAdmin()) {
+            addUserBtn.style.display = 'block';
+        } else {
+            addUserBtn.style.display = 'none';
+        }
+    }
+}
+
+// Generar contraseña temporal fuerte
+function generateTemporaryPassword() {
+    const length = 12;
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+}
+
+// TABLA DE SEGURIDAD Y ACCESO - GESTIÓN DE USUARIOS Y PERMISOS
+// ============================================================================
+
+// Load security and access management table
+async function loadSecurityTable() {
+    // Check permission to load security table
+    if (!checkSecurityPermission()) return;
+    console.log('Loading Security Table...');
+    showLoading();
+
+    try {
+        // Fetch all users from Supabase
+        const { data: users, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        usersData = users || [];
+        renderSecurityTable();
+        setupSecurityTableEventListeners();
+
+    } catch (error) {
+        console.error('Error loading security table:', error);
+        showToast('danger', 'Error', 'No se pudo cargar la tabla de seguridad: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Render security table in the UI
+function renderSecurityTable() {
+    const tbody = document.querySelector('#securityTable tbody');
+    if (!tbody) {
+        console.warn('Security table tbody not found');
+        return;
+    }
+
+    tbody.innerHTML = '';
+
+    if (usersData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay usuarios registrados</td></tr>';
+        return;
+    }
+
+    usersData.forEach(user => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${user.id || 'N/A'}</td>
+            <td>${user.full_name || user.email.split('@')[0]}</td>
+            <td>${user.email}</td>
+            <td><span class="badge badge-${user.role === 'admin' ? 'danger' : 'info'}">${user.role || 'user'}</span></td>
+            <td><span class="badge badge-${user.status === 'active' ? 'success' : 'secondary'}">${user.status || 'inactive'}</span></td>
+            <td>
+                <button class="btn btn-sm btn-warning" onclick="editUserSecurity('${user.id}')">Editar</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteUserSecurity('${user.id}')">Eliminar</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    // Enforce UI restrictions based on user role
+    enforceSecurityUIRestrictions();
+}
+
+// Setup event listeners for security table
+function setupSecurityTableEventListeners() {
+    const addUserBtn = document.getElementById('addUserSecurityBtn');
+    if (addUserBtn) {
+        addUserBtn.addEventListener('click', showAddUserDialog);
+    }
+}
+
+// Show dialog to add new user
+function showAddUserDialog() {
+    const name = prompt('Nombre completo del usuario:');
+    if (!name) return;
+
+    const email = prompt('Correo electrónico (debe ser @gescon360.es):');
+    if (!email) return;
+
+    if (!email.endsWith('@gescon360.es')) {
+        showToast('danger', 'Error', 'El dominio debe ser @gescon360.es');
+        return;
+    }
+
+    const role = confirm('¿Es administrador? (Aceptar para Admin, Cancelar para Usuario)');
+    addUserSecurity(name, email, role ? 'admin' : 'user');
+}
+
+// Add new user to system
+async function addUserSecurity(fullName, email, role = 'user') {
+    // Check permission to add users
+    if (!checkSecurityPermission()) return;
+    console.log('Adding user:', email, 'with role:', role);
+    showLoading();
+
+    try {
+        // Generate temporary password
+        const tempPassword = Math.random().toString(36).substr(2, 9) + 'Gs360!';
+
+        // Create user in Supabase Auth
+        const { data: authUser, error: authError } = await supabaseClient.auth.admin.createUser({
+            email: email,
+            password: tempPassword,
+            email_confirm: true
+        });
+
+        if (authError) throw authError;
+
+        // Create profile record
+        const { error: profileError } = await supabaseClient
+            .from('profiles')
+            .insert({
+                id: authUser.user.id,
+                full_name: fullName,
+                email: email,
+                role: role,
+                status: 'active',
+                created_at: new Date().toISOString()
+            });
+
+        if (profileError) throw profileError;
+
+        showToast('success', 'Éxito', `Usuario ${email} creado. Contraseña temporal: ${tempPassword}`);
+        loadSecurityTable();
+
+    } catch (error) {
+        console.error('Error adding user:', error);
+        showToast('danger', 'Error', 'No se pudo crear el usuario: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Edit user
+async function editUserSecurity(userId) {
+    // Check permission to edit users
+    if (!checkSecurityPermission()) return;
+    const user = usersData.find(u => u.id === userId);
+    if (!user) return;
+
+    const newRole = confirm(`Cambiar rol de ${user.email}? (Aceptar para Admin, Cancelar para Usuario)`);
+    const newStatus = confirm(`¿Activar usuario? (Aceptar para Activo, Cancelar para Inactivo)`);
+
+    showLoading();
+
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({
+                role: newRole ? 'admin' : 'user',
+                status: newStatus ? 'active' : 'inactive'
+            })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        showToast('success', 'Éxito', 'Usuario actualizado correctamente');
+        loadSecurityTable();
+
+    } catch (error) {
+        console.error('Error updating user:', error);
+        showToast('danger', 'Error', 'No se pudo actualizar el usuario: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Delete user
+async function deleteUserSecurity(userId) {
+    // Check permission to delete users
+    if (!checkSecurityPermission()) return;
+    if (!confirm('¿Está seguro de que desea eliminar este usuario?')) return;
+
+    showLoading();
+
+    try {
+        // Delete from profiles table
+        const { error: profileError } = await supabaseClient
+            .from('profiles')
+            .delete()
+            .eq('id', userId);
+
+        if (profileError) throw profileError;
+
+        // Delete from auth (optional - requires admin key)
+        // For now, just delete from profiles
+
+        showToast('success', 'Éxito', 'Usuario eliminado correctamente');
+        loadSecurityTable();
+
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        showToast('danger', 'Error', 'No se pudo eliminar el usuario: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Initialize function to load app after login
+async function initializeApp() {
+    console.log('Initializing app...');
+    try {
+        // Load initial data
+        // loadSecurityTable();
+        // enforceSecurityUIRestrictions();
+        // Add other initialization calls here
+    } catch (error) {
+        console.error('Error initializing app:', error);
+    }
+}
+
+// ============================================================================
+// FUNCIONES CLIENTE PARA GESTIÓN DE ROLES DE ADMINISTRADOR
+// ============================================================================
+
+// URL del servidor backend (ajusta según tu despliegue)
+// URL del servidor backend (ajusta según tu despliegue)
+const ADMIN_API_URL = ''; // Ruta relativa para producción (mismo dominio)
+
+/**
+ * Cambiar rol de administrador de un usuario
+ * @param {string} targetUserId - ID del usuario a modificar
+ * @param {boolean} makeAdmin - true para promover, false para revocar
+ * @returns {Promise<Object>} Resultado de la operación
+ */
+async function setAdminRole(targetUserId, makeAdmin) {
+    try {
+        // Obtener el access token del usuario actual
+        const { data: { session } } = await supabaseClient.auth.getSession();
+
+        if (!session) {
+            throw new Error('No hay sesión activa');
+        }
+
+        const accessToken = session.access_token;
+
+        // Llamar al endpoint server-side
+        const response = await fetch(`${ADMIN_API_URL}/admin/set-admin`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+                targetUserId,
+                makeAdmin
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Error al cambiar rol');
+        }
+
+        console.log('✓ Rol actualizado:', result);
+        return result;
+
+    } catch (error) {
+        console.error('Error cambiando rol de administrador:', error);
+        throw error;
+    }
+}
+
+/**
+ * Verificar si el usuario actual es administrador
+ * @returns {Promise<boolean>} true si es admin, false si no
+ */
+async function checkIfCurrentUserIsAdmin() {
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+
+        if (!session) {
+            return false;
+        }
+
+        const response = await fetch(`${ADMIN_API_URL}/admin/check`, {
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+
+        const result = await response.json();
+        return result.isAdmin === true;
+
+    } catch (error) {
+        console.error('Error verificando rol de administrador:', error);
+        return false;
+    }
+}
+
+/**
+ * Ejemplo de uso en UI: botón para promover/revocar admin
+ */
+async function handleAdminButtonClick(userId, currentlyAdmin) {
+    try {
+        const action = currentlyAdmin ? 'revocar' : 'promover';
+
+        if (!confirm(`¿Estás seguro de ${action} permisos de administrador para este usuario?`)) {
+            return;
+        }
+
+        const result = await setAdminRole(userId, !currentlyAdmin);
+
+        showToast('success', 'Éxito', result.message);
+
+        // Recargar lista de usuarios o actualizar UI
+        // loadSecurityTable(); // Descomentar para refrescar la tabla
+
+    } catch (error) {
+        showToast('danger', 'Error', error.message);
+    }
+}
+
+/**
+ * Inicialización: verificar si usuario actual es admin al cargar la página
+ */
+async function initializeAdminUI() {
+    const isAdmin = await checkIfCurrentUserIsAdmin();
+
+    if (isAdmin) {
+        console.log('✓ Usuario actual tiene permisos de administrador');
+        // Mostrar elementos de UI de administración
+        document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = 'block';
+        });
+    } else {
+        console.log('Usuario actual NO es administrador');
+        // Ocultar elementos de UI de administración
+        document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = 'none';
+        });
     }
 }
