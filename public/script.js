@@ -719,13 +719,13 @@ function previewImport() {
 function importarExpedientes() {
     console.log('Función importarExpedientes llamada');
     // Implementación básica de importación de expedientes
-    const fileInput = document.getElementById('fileInput');
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    const importFile = document.getElementById('importFile');
+    if (!importFile || !importFile.files || importFile.files.length === 0) {
         showToast('warning', 'Sin archivo', 'Por favor selecciona un archivo CSV o Excel para importar.');
         return;
     }
     
-    const file = fileInput.files[0];
+    const file = importFile.files[0];
     showLoading();
     
     try {
