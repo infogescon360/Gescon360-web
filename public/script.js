@@ -298,9 +298,38 @@ function setupEventListeners() {
             if (file) {
                 console.log('File selected:', file.name);
                 showToast('success', 'Archivo seleccionado', `Archivo: ${file.name}`);
-                // TODO: Process the file
+                // Automatically process the file
+                importarExpedientes();
             }
         });
+
+                // Drag and drop handlers
+        if (fileUploadContainer) {
+            fileUploadContainer.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                fileUploadContainer.classList.add('drag-over');
+            });
+            
+            fileUploadContainer.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                fileUploadContainer.classList.remove('drag-over');
+            });
+            
+            fileUploadContainer.addEventListener('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                fileUploadContainer.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    importFileInput.files = files;
+                    const event = new Event('change', { bubbles: true });
+                    importFileInput.dispatchEvent(event);
+                }
+            });
+        }
     }
     }
 
