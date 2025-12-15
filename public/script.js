@@ -282,8 +282,9 @@ function setupEventListeners() {
             console.log('Login form submitted');
             login();
         });
+    }
 
-            // File upload container click handler
+    // File upload container click handler
     const fileUploadContainer = document.getElementById('fileUploadContainer');
     const importFileInput = document.getElementById('importFile');
     
@@ -303,7 +304,7 @@ function setupEventListeners() {
             }
         });
 
-                // Drag and drop handlers
+        // Drag and drop handlers
         if (fileUploadContainer) {
             fileUploadContainer.addEventListener('dragover', function(e) {
                 e.preventDefault();
@@ -330,7 +331,6 @@ function setupEventListeners() {
                 }
             });
         }
-    }
     }
 
     // Toggle password visibility
@@ -1375,8 +1375,8 @@ async function initializeAdminUI() {
             el.style.display = 'none';
         });
     }
-
-    // ============================================================================
+}
+// ============================================================================
 // DASHBOARD & STATISTICS FUNCTIONS
 // ============================================================================
 
@@ -1432,5 +1432,4 @@ function updateUserDisplay() {
             userNameElement.textContent = 'Usuario: ' + (currentUser.name || currentUser.email);
         }
     }
-}
 }
