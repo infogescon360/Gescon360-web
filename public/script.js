@@ -1021,16 +1021,15 @@ async function initializeApp() {
         // loadSecurityTable();
         // enforceSecurityUIRestrictions();
 
-                // Load dashboard statistics
-        await loadDashboardStats();
-        
-        // Load user info display
-        updateUserDisplay();
         // Add other initialization calls here
     } catch (error) {
         console.error('Error initializing app:', error);
     }
 }
+        
+        // Load dashboard statistics and update user display
+        await loadDashboardStats();
+        updateUserDisplay();
 
 // ============================================================================
 // FUNCIONES CLIENTE PARA GESTIÓN DE ROLES DE ADMINISTRADOR
