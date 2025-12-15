@@ -228,7 +228,11 @@ async function checkAuthStatus() {
                 isAdmin: isAdmin
             };
             showApp();
-            initializeApp();
+            await             initializeApp();
+                        
+            // Load dashboard statistics and user display
+            await loadDashboardStats();
+            updateUserDisplay();
         } else {
             showAuth();
         }
@@ -1022,10 +1026,6 @@ async function initializeApp() {
         // enforceSecurityUIRestrictions();
 
         // Add other initialization calls here
-                // Load dashboard statistics and update user display
-        await loadDashboardStats();
-        updateUserDisplay();
-
 
     } catch (error) {
         console.error('Error initializing app:', error);
