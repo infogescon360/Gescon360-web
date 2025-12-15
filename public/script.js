@@ -769,7 +769,8 @@ function previewImport() {
     showToast('info', 'En desarrollo', 'La vista previa de importación estará disponible próximamente.');
 }
 
-async function importarExpedientes   () {
+772
+    async function importarExpedientes () {
     console.log('Función importarExpedientes llamada');
     
     // Obtener archivo
