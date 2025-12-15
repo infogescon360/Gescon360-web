@@ -282,6 +282,26 @@ function setupEventListeners() {
             console.log('Login form submitted');
             login();
         });
+
+            // File upload container click handler
+    const fileUploadContainer = document.getElementById('fileUploadContainer');
+    const importFileInput = document.getElementById('importFile');
+    
+    if (fileUploadContainer && importFileInput) {
+        fileUploadContainer.addEventListener('click', function() {
+            importFileInput.click();
+        });
+        
+        // Handle file selection
+        importFileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('File selected:', file.name);
+                showToast('success', 'Archivo seleccionado', `Archivo: ${file.name}`);
+                // TODO: Process the file
+            }
+        });
+    }
     }
 
     // Toggle password visibility
