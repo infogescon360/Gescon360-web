@@ -801,11 +801,38 @@ function importarExpedientes() {
             return;
         }
 
-        showToast('info', 'Procesando', `Se encontraron ${data.length} expedientes. Insertando en base de datos...`);
-
-        // PASO 2: Insertar en Supabase (FASE 2a: sin duplicados ni distribución)
-        const resultado = await insertarExpedientesEnSupabase(data);
-
+        // Obtener opciones de importación
+        const verificarDuplicados = document.getElementById('verificarDuplicados')?.checked ?? true;
+        const normalizarCampos = document.getElementById('normalizarCampos')?.checked ?? true;
+        const distribuirTareas = document.getElementById('distribuirTareas')?.checked ?? true;
+        const distribuirEquitativamente = document.getElementById('distribuirEquitativamente')?.checked ?? true;
+        
+        showToast('info', 'Procesando', `Se encontraron ${data.length} expedientes. Procesando...`);
+        
+        // PASO 2: Verificar duplicados si está activado
+        let expedientesParaInsertar = data;
+        let duplicadosEncontrados = [];
+        
+        if (verificarDuplicados) {
+            showToast('info', 'Verificando', 'Verificando duplicados por nº siniestro...');
+            const resultado = await verificarYEliminarDuplicados(data);
+            expedientesParaInsertar = resultado.nuevos;
+            duplicadosEncontrados = resultado.duplicados;
+            
+            if (duplicadosEncontrados.length > 0) {
+                showToast('warning', 'Duplicados encontrados', 
+                    `Se encontraron ${duplicadosEncontrados.length} duplicados que no serán importados.`);
+            }
+        }
+        
+        // PASO 3: Insertar en Supabase
+        if (expedientesParaInsertar.length === 0) {
+            hideLoading();
+            showToast('warning', 'Sin nuevos expedientes', 'Todos los expedientes ya existían en el sistema.');
+            return;
+        }
+        
+        const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar);
         hideLoading();
         showToast('success', 'Importación Completada', 
             `Se importaron ${resultado.insertados} expedientes correctamente.`);
@@ -822,6 +849,48 @@ function importarExpedientes() {
         // ============================================================================
 // FUNCIONES AUXILIARES PARA IMPORTACIÓN DE EXPEDIENTES - FASE 2a
 // ============================================================================
+
+
+        // Función para verificar y eliminar duplicados por nº de siniestro
+async function verificarYEliminarDuplicados(expedientes) {
+    try {
+        // Obtener todos los números de siniestro del archivo
+        const numerosSiniestro = expedientes.map(exp => exp.num_siniestro).filter(num => num && num.trim() !== '');
+        
+        if (numerosSiniestro.length === 0) {
+            return { nuevos: expedientes, duplicados: [] };
+        }
+        
+        // Consultar en Supabase qué números de siniestro ya existen
+        const { data: existentes, error } = await supabaseClient
+            .from('expedientes')
+            .select('num_siniestro')
+            .in('num_siniestro', numerosSiniestro);
+        
+        if (error) throw error;
+        
+        // Crear un Set con los números de siniestro que ya existen
+        const siniestrosExistentes = new Set(existentes.map(exp => exp.num_siniestro));
+        
+        // Separar expedientes nuevos de duplicados
+        const nuevos = [];
+        const duplicados = [];
+        
+        expedientes.forEach(exp => {
+            if (exp.num_siniestro && siniestrosExistentes.has(exp.num_siniestro)) {
+                duplicados.push(exp);
+            } else {
+                nuevos.push(exp);
+            }
+        });
+        
+        return { nuevos, duplicados };
+    } catch (error) {
+        console.error('Error verificando duplicados:', error);
+        // En caso de error, devolver todos como nuevos para no bloquear la importación
+        return { nuevos: expedientes, duplicados: [] };
+    }
+}
 
 // Función auxiliar para parsear archivo CSV/Excel con SheetJS
 async function parsearArchivoImportacion(file) {
