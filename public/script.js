@@ -1020,6 +1020,12 @@ async function initializeApp() {
         // Load initial data
         // loadSecurityTable();
         // enforceSecurityUIRestrictions();
+
+                // Load dashboard statistics
+        await loadDashboardStats();
+        
+        // Load user info display
+        updateUserDisplay();
         // Add other initialization calls here
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -1148,4 +1154,62 @@ async function initializeAdminUI() {
             el.style.display = 'none';
         });
     }
+
+    // ============================================================================
+// DASHBOARD & STATISTICS FUNCTIONS
+// ============================================================================
+
+// Load dashboard statistics from Supabase
+async function loadDashboardStats() {
+    console.log('Loading dashboard statistics...');
+    
+    try {
+        // Get expedientes statistics
+        const { data: expedientes, error: expError } = await supabaseClient
+            .from('expedientes')
+            .select('estado', { count: 'exact' });
+        
+        if (expError) throw expError;
+        
+        // Count by status
+        const totalExpedientes = expedientes ? expedientes.length : 0;
+        const pendientes = expedientes ? expedientes.filter(e => e.estado === 'Pdte. revisión' || e.estado === 'Pendiente').length : 0;
+        const enProceso = expedientes ? expedientes.filter(e => e.estado === 'En Proceso' || e.estado === 'En gestión').length : 0;
+        
+        // Get today's urgent tasks
+        const today = new Date().toISOString().split('T')[0];
+        const { data: urgentTasks, error: urgError } = await supabaseClient
+            .from('expedientes')
+            .select('*', { count: 'exact' })
+            .lte('fecha_seguimiento', today)
+            .neq('estado', 'Completado')
+            .neq('estado', 'Archivado');
+        
+        const vencimientoHoy = urgentTasks ? urgentTasks.length : 0;
+        
+        // Update dashboard cards
+        const cards = document.querySelectorAll('#dashboard .card h2');
+        if (cards.length >= 4) {
+            cards[0].textContent = totalExpedientes;
+            cards[1].textContent = pendientes;
+            cards[2].textContent = enProceso;
+            cards[3].textContent = vencimientoHoy;
+        }
+        
+        console.log('Dashboard stats loaded:', { totalExpedientes, pendientes, enProceso, vencimientoHoy });
+    } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+        showToast('danger', 'Error', 'No se pudieron cargar las estadísticas del dashboard');
+    }
+}
+
+// Update user display info
+function updateUserDisplay() {
+    if (currentUser) {
+        const userNameElement = document.getElementById('userName');
+        if (userNameElement) {
+            userNameElement.textContent = 'Usuario: ' + (currentUser.name || currentUser.email);
+        }
+    }
+}
 }
