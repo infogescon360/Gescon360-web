@@ -12,6 +12,15 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static('public'));
 
+// Configurar CSP para permitir SheetJS CDN
+app.use((req, res, next) => {
+    res.setHeader(
+          'Content-Security-Policy',
+          "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
+        );
+    next();
+  });
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
