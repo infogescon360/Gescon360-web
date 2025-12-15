@@ -769,8 +769,8 @@ function previewImport() {
     showToast('info', 'En desarrollo', 'La vista previa de importación estará disponible próximamente.');
 }
 
-async function importarExpediente    () {
-    console.log('Función importarExpedientes llamada');    console.log('Función importarExpedientes llamada');
+async function importarExpedientes   () {
+    console.log('Función importarExpedientes llamada');
     
     // Obtener archivo
     const importFile = document.getElementById('importFile');
