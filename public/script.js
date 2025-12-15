@@ -769,9 +769,8 @@ function previewImport() {
     showToast('info', 'En desarrollo', 'La vista previa de importación estará disponible próximamente.');
 }
 
-772
-    async function importarExpedientes () {
-    console.log('Función importarExpedientes llamada');
+async function importarExpediente    () {
+    console.log('Función importarExpedientes llamada');    console.log('Función importarExpedientes llamada');
     
     // Obtener archivo
     const importFile = document.getElementById('importFile');
@@ -845,8 +844,6 @@ function previewImport() {
         console.error('Error importando expedientes:', error);
         hideLoading();
         showToast('danger', 'Error', 'Error al importar expedientes: ' + error.message);
-            }
-}
 
 
         // ============================================================================
