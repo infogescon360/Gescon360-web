@@ -741,29 +741,130 @@ function previewImport() {
 }
 
 function importarExpedientes() {
-    console.log('Función importarExpedientes llamada');
-    // Implementación básica de importación de expedientes
+    console.log('Función importarExpedientes llamada');    console.log('Función importarExpedientes llamada');
+    
+    // Obtener archivo
     const importFile = document.getElementById('importFile');
     if (!importFile || !importFile.files || importFile.files.length === 0) {
         showToast('warning', 'Sin archivo', 'Por favor selecciona un archivo CSV o Excel para importar.');
         return;
     }
-    
+
     const file = importFile.files[0];
+    
+    // Validar tamaño (10 MB máximo)
+    const maxSize = 10 * 1024 * 1024; // 10 MB
+    if (file.size > maxSize) {
+        showToast('danger', 'Archivo muy grande', 'El archivo excede el tamaño máximo de 10 MB.');
+        return;
+    }
+
     showLoading();
     
     try {
-        showToast('success', 'Importando', 'La funcionalidad de importación está en desarrollo. Pronto estará disponible.');
-        // TODO: Implementar parseo de CSV/Excel
-        // TODO: Validar estructura de datos
-        // TODO: Detectar duplicados
-        // TODO: Insertar en Supabase
+        // PASO 1: Parsear archivo con SheetJS
+        showToast('info', 'Parseando', 'Leyendo archivo...');
+        const data = await parsearArchivoImportacion(file);
+        
+        if (!data || data.length === 0) {
+            showToast('warning', 'Archivo vacío', 'El archivo no contiene datos válidos.');
+            hideLoading();
+            return;
+        }
+
+        showToast('info', 'Procesando', `Se encontraron ${data.length} expedientes. Insertando en base de datos...`);
+
+        // PASO 2: Insertar en Supabase (FASE 2a: sin duplicados ni distribución)
+        const resultado = await insertarExpedientesEnSupabase(data);
+
+        hideLoading();
+        showToast('success', 'Importación Completada', 
+            `Se importaron ${resultado.insertados} expedientes correctamente.`);
+        
+        // Recargar dashboard stats
+        await loadDashboardStats();
+
     } catch (error) {
         console.error('Error importando expedientes:', error);
-        showToast('danger', 'Error', 'Error al importar expedientes: ' + error.message);
-    } finally {
         hideLoading();
-    }}
+        showToast('danger', 'Error', 'Error al importar expedientes: ' + error.message);
+
+
+        // ============================================================================
+// FUNCIONES AUXILIARES PARA IMPORTACIÓN DE EXPEDIENTES - FASE 2a
+// ============================================================================
+
+// Función auxiliar para parsear archivo CSV/Excel con SheetJS
+async function parsearArchivoImportacion(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                // Obtener la primera hoja
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                
+                // Convertir a JSON
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                
+                // Normalizar y mapear campos
+                const expedientesNormalizados = jsonData.map(row => normalizarExpediente(row));
+                
+                resolve(expedientesNormalizados);
+            } catch (error) {
+                reject(new Error('Error al parsear el archivo: ' + error.message));
+            }
+        };
+
+        reader.onerror = function() {
+            reject(new Error('Error al leer el archivo'));
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+// Función para normalizar un expediente
+function normalizarExpediente(row) {
+    return {
+        num_siniestro: row['Nº Siniestro'] || row['num_siniestro'] || row['NUM_SINIESTRO'] || '',
+        num_poliza: row['Nº Póliza'] || row['num_poliza'] || row['NUM_POLIZA'] || '',
+        num_sgr: row['Nº SGR'] || row['num_sgr'] || row['NUM_SGR'] || '',
+        nombre_asegurado: row['Asegurado'] || row['nombre_asegurado'] || row['NOMBRE'] || '',
+        direccion_asegurado: row['Dirección'] || row['direccion'] || row['DIRECCION'] || '',
+        cp: row['CP'] || row['codigo_postal'] || '',
+        importe: parseFloat(row['Importe'] || row['importe'] || 0),
+        fecha_ocurrencia: row['Fecha Ocurrencia'] || row['fecha_ocurrencia'] || null,
+        tipo_dano: row['Tipo Daño'] || row['tipo_dano'] || row['TIPO_DAÑO'] || '',
+        nombre_causante: row['Causante'] || row['nombre_causante'] || '',
+        direccion_causante: row['Dirección Causante'] || row['direccion_causante'] || '',
+        cia_causante: row['Cía Causante'] || row['cia_causante'] || '',
+        estado: 'Pdte. revisión', // Estado inicial
+        fecha_inicio: new Date().toISOString().split('T')[0]
+    };
+}
+
+// Función para insertar expedientes en Supabase
+async function insertarExpedientesEnSupabase(expedientes) {
+    try {
+        const { data, error } = await supabaseClient
+            .from('expedientes')
+            .insert(expedientes)
+            .select();
+
+        if (error) throw error;
+
+        return {
+            insertados: data.length,
+            expedientes: data
+        };
+    } catch (error) {
+        throw new Error('Error al insertar en base de datos: ' + error.message);
+    }
+    }
 
 function openDatePicker(element, id) {
     console.log('Función openDatePicker llamada para:', id);
