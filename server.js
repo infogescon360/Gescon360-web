@@ -272,6 +272,205 @@ app.patch('/api/tareas/:id', async (req, res) => {
   }
 });
 
+
+// ---------------------------------------------------------------------
+// Endpoints adicionales para búsqueda, duplicados, archivados y reportes
+// ---------------------------------------------------------------------
+
+// Búsqueda avanzada de expedientes
+app.get('/api/expedientes/buscar', async (req, res) => {
+  try {
+    const { expediente, poliza, sgr, dni } = req.query;
+    let query = supabase.from('expedientes').select('*');
+    
+    if (expediente) query = query.ilike('numero_expediente', `%${expediente}%`);
+    if (poliza) query = query.ilike('numero_poliza', `%${poliza}%`);
+    if (sgr) query = query.ilike('numero_sgr', `%${sgr}%`);
+    if (dni) query = query.ilike('dni', `%${dni}%`);
+    
+    const { data, error } = await query.limit(100);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Verificar duplicados
+app.post('/api/duplicados/verificar', async (req, res) => {
+  try {
+    const { expedientes } = req.body;
+    if (!Array.isArray(expedientes)) {
+      return res.status(400).json({ error: 'Se requiere un array de expedientes' });
+    }
+    
+    const duplicados = [];
+    for (const exp of expedientes) {
+      const { data, error } = await supabase
+        .from('expedientes')
+        .select('*')
+        .or(`numero_expediente.eq.${exp.numero_expediente},numero_poliza.eq.${exp.numero_poliza},dni.eq.${exp.dni}`);
+      
+      if (error) continue;
+      if (data && data.length > 0) {
+        duplicados.push({
+          nuevo: exp,
+          existente: data[0],
+          motivo: 'Coincide expediente, póliza o DNI'
+        });
+      }
+    }
+    
+    res.json({ duplicados, total: duplicados.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener expedientes archivados
+app.get('/api/archivados', async (req, res) => {
+  try {
+    const { motivo, desde, hasta, limite = 50 } = req.query;
+    let query = supabase.from('expedientes_archivados').select('*');
+    
+    if (motivo) query = query.eq('motivo_archivo', motivo);
+    if (desde) query = query.gte('created_at', desde);
+    if (hasta) query = query.lte('created_at', hasta);
+    
+    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+    
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Restaurar expediente archivado
+app.post('/api/archivados/:id/restaurar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Obtener el expediente archivado
+    const { data: archivado, error: getErr } = await supabase
+      .from('expedientes_archivados')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (getErr) return res.status(500).json({ error: getErr.message });
+    
+    // Insertar en expedientes activos
+    const { error: insErr } = await supabase
+      .from('expedientes')
+      .insert({
+        ...archivado,
+        estado: 'En proceso'
+      });
+    
+    if (insErr) return res.status(500).json({ error: insErr.message });
+    
+    // Eliminar de archivados
+    await supabase.from('expedientes_archivados').delete().eq('id', id);
+    
+    res.json({ ok: true, message: 'Expediente restaurado correctamente' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Generar reporte de estadísticas
+app.get('/api/reportes/estadisticas', async (req, res) => {
+  try {
+    const { desde, hasta } = req.query;
+    
+    // Expedientes totales
+    let queryTotal = supabase.from('expedientes').select('*', { count: 'exact', head: true });
+    const { count: total } = await queryTotal;
+    
+    // Por estado
+    const estados = ['Pendiente', 'En proceso', 'Finalizado', 'Archivado'];
+    const porEstado = {};
+    
+    for (const estado of estados) {
+      const { count } = await supabase
+        .from('expedientes')
+        .select('*', { count: 'exact', head: true })
+        .eq('estado', estado);
+      porEstado[estado] = count || 0;
+    }
+    
+    // Archivados
+    const { count: archivados } = await supabase
+      .from('expedientes_archivados')
+      .select('*', { count: 'exact', head: true });
+    
+    res.json({
+      total,
+      porEstado,
+      archivados,
+      fecha_generacion: new Date().toISOString()
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Importar expedientes en lote
+app.post('/api/expedientes/importar', async (req, res) => {
+  try {
+    const { expedientes, opciones } = req.body;
+    
+    if (!Array.isArray(expedientes)) {
+      return res.status(400).json({ error: 'Se requiere un array de expedientes' });
+    }
+    
+    const resultados = {
+      exitosos: [],
+      duplicados: [],
+      errores: []
+    };
+    
+    for (const exp of expedientes) {
+      try {
+        // Verificar duplicados si está habilitado
+        if (opciones?.verificarDuplicados) {
+          const { data: existe } = await supabase
+            .from('expedientes')
+            .select('id')
+            .eq('numero_expediente', exp.numero_expediente)
+            .single();
+          
+          if (existe) {
+            resultados.duplicados.push(exp);
+            continue;
+          }
+        }
+        
+        // Insertar expediente
+        const { data, error } = await supabase
+          .from('expedientes')
+          .insert(exp)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        resultados.exitosos.push(data);
+      } catch (err) {
+        resultados.errores.push({
+          expediente: exp,
+          error: err.message
+        });
+      }
+    }
+    
+    res.json(resultados);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ---------------------------------------------------------------------
 // Arranque del servidor
 // ---------------------------------------------------------------------
@@ -285,6 +484,12 @@ app.listen(PORT, () => {
   console.log('   GET  /api/tareas');
   console.log('   PATCH /api/tareas/:id');
   console.log('   GET  /health');
+    console.log('   GET    /api/expedientes/buscar');
+  console.log('   POST   /api/duplicados/verificar');
+  console.log('   GET    /api/archivados');
+  console.log('   POST   /api/archivados/:id/restaurar');
+  console.log('   GET    /api/reportes/estadisticas');
+  console.log('   POST   /api/expedientes/importar');
 });
 
 
