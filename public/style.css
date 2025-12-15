@@ -1233,4 +1233,14 @@ body {
 
 #archive-option input[type="checkbox"] {
     margin-right: 10px;
+
+}
+
+/* Controlar visibilidad de contenedores de autenticación */
+#loginContainer {
+        display: block;
+    }
+
+#appContainer {
+        display: none; /* Oculto por defecto hasta que el usuario inicie sesión */
 }
