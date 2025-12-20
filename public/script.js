@@ -464,11 +464,18 @@ async function login() {
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
 
-    // Validate domain
+        // Validar dominio
     if (!email.endsWith('@gescon360.es')) {
         showToast('danger', 'Error de validación', 'El dominio del correo debe ser @gescon360.es');
         return;
     }
+
+    // Validar usuario administrador principal
+    if (email !== 'jesus.mp@gescon360.es') {
+        showToast('danger', 'Acceso restringido', 'En esta fase solo está autorizado el usuario jesus.mp@gescon360.es');
+        return;
+    }
+
 
     console.log('Login attempt with email:', email);
 
