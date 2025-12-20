@@ -1132,6 +1132,47 @@ function showAddUserDialog() {
     const role = confirm('¿Es administrador? (Aceptar para Admin, Cancelar para Usuario)');
     addUserSecurity(name, email, role ? 'admin' : 'user');
 }
+        // Crear usuario de seguridad llamando al backend
+async function createSecurityUser({ fullName, email, role }) {
+    try {
+        // Verificar sesión y obtener token
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+            showToast('danger', 'Sesión no válida', 'Debes iniciar sesión de nuevo');
+            return;
+        }
+
+        showToast('info', 'Creando usuario', `Creando usuario ${email} con rol ${role}...`);
+
+        const response = await fetch('/admin/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ fullName, email, role })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Error al crear usuario');
+        }
+
+        // Mostrar contraseña temporal al admin
+        const tempPasswordMsg = `Usuario: ${result.email}\nRol: ${result.role}\nContraseña temporal: ${result.tempPassword}`;
+        console.log('Nuevo usuario creado:', tempPasswordMsg);
+        alert('Usuario creado correctamente.\n\n' + tempPasswordMsg);
+
+        showToast('success', 'Usuario creado', `Se ha creado el usuario ${result.email}`);
+
+        // Recargar tabla de seguridad para ver el nuevo usuario
+        await loadSecurityTable();
+    } catch (error) {
+        console.error('Error creando usuario de seguridad:', error);
+        showToast('danger', 'Error', error.message || 'Error al crear usuario');
+    }
+}
 
 // Add new user to system
 async function addUserSecurity(fullName, email, role = 'user') {
