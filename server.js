@@ -484,6 +484,109 @@ app.post('/api/expedientes/importar', async (req, res) => {
 // Arranque del servidor
 // ---------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
+// ============================================================================
+// ADMIN: CREACIÓN DE USUARIOS DESDE EL PANEL DE SEGURIDAD
+// ============================================================================
+
+app.post('/admin/users', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '').trim();
+
+    if (!token) {
+      return res.status(401).json({ error: 'Token de autenticación no proporcionado' });
+    }
+
+    // Verificar sesión y rol admin igual que en /admin/check
+    const { data: { user }, error: authError } = supabase.auth.getUser
+      ? await supabase.auth.getUser(token)
+      : { data: { user: null }, error: { message: 'Método getUser no disponible' } };
+
+    if (authError || !user) {
+      return res.status(401).json({ error: 'Sesión no válida' });
+    }
+
+    // Aquí asumimos que ya tienes alguna forma de comprobar si es admin.
+    // Si en tu backend ya consultas la tabla profiles o similar para /admin/check,
+    // reutiliza esa lógica. A modo de ejemplo simple:
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profileError || !profile || profile.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo administradores pueden crear usuarios' });
+    }
+
+    const { email, fullName, role } = req.body || {};
+
+    if (!email || !role) {
+      return res.status(400).json({ error: 'Email y rol son obligatorios' });
+    }
+
+    if (!email.endsWith('@gescon360.es')) {
+      return res.status(400).json({ error: 'El email debe pertenecer al dominio @gescon360.es' });
+    }
+
+    if (!['admin', 'user'].includes(role)) {
+      return res.status(400).json({ error: 'Rol no válido. Debe ser "admin" o "user"' });
+    }
+
+    // Generar contraseña temporal fuerte
+    const tempPassword = generateStrongPassword();
+
+    // Crear usuario en Auth usando SERVICE_ROLE_KEY (supabaseAdmin)
+    const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true
+    });
+
+    if (createError) {
+      console.error('Error creando usuario en Auth:', createError);
+      return res.status(500).json({ error: 'No se pudo crear el usuario en Supabase Auth' });
+    }
+
+    const userId = createdUser.user?.id;
+
+    // Crear/actualizar perfil en tabla profiles
+    const { error: profileUpsertError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: userId,
+        email,
+        full_name: fullName || email.split('@')[0],
+        role,
+        status: 'active'
+      });
+
+    if (profileUpsertError) {
+      console.error('Error actualizando perfil:', profileUpsertError);
+      // No se hace rollback del usuario Auth, pero se informa
+    }
+
+    return res.json({
+      message: 'Usuario creado correctamente',
+      email,
+      role,
+      tempPassword
+    });
+  } catch (e) {
+    console.error('Error en /admin/users:', e);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Función auxiliar para contraseña fuerte en backend
+function generateStrongPassword(length = 12) {
+  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+}
 app.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log('📍 Endpoints:');
