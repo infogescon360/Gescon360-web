@@ -1479,4 +1479,46 @@ function updateUserDisplay() {
         }
     }
 }
+// ============================================================================
+// CREAR USUARIO DE SEGURIDAD
+// ============================================================================
+async function createSecurityUser({ fullName, email, role }) {
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+            showToast('danger', 'Sesión no válida', 'Debes iniciar sesión de nuevo');
+            return;
+        }
+
+        showToast('info', 'Creando usuario', `Creando usuario ${email} con rol ${role}...`);
+
+        const response = await fetch('/admin/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ fullName, email, role })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Error al crear usuario');
+        }
+
+        const result = await response.json();
+        const tempPasswordMsg = `Usuario: ${result.email}\nRol: ${result.role}\nContraseña temporal: ${result.tempPassword}`;
+        console.log('Nuevo usuario creado:', tempPasswordMsg);
+        alert('Usuario creado correctamente.\n\n' + tempPasswordMsg + '\n\nIMPORTANTE: Guarda esta contraseña.');
+
+        showToast('success', 'Usuario creado', `Se ha creado el usuario ${result.email}`);
+
+        if (typeof loadSecurityTable === 'function') {
+            await loadSecurityTable();
+        }
+    } catch (error) {
+        console.error('Error creando usuario de seguridad:', error);
+        showToast('danger', 'Error', error.message || 'Error al crear usuario');
+    }
+}
 }
