@@ -584,6 +584,273 @@ function generateStrongPassword(length = 12) {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
   let password = '';
   for (let i = 0; i < length; i++) {
+
+      // ---------------------------------------------------------------------
+// CRUD Clientes
+// ---------------------------------------------------------------------
+
+// GET /api/clientes - Listar todos los clientes
+app.get('/api/clientes', async (req, res) => {
+  try {
+    const { buscar, limite = 50 } = req.query;
+    let query = supabase.from('clientes').select('*');
+    
+    if (buscar) {
+      query = query.or(`nombre.ilike.%${buscar}%,apellidos.ilike.%${buscar}%,dni.ilike.%${buscar}%,email.ilike.%${buscar}%`);
+    }
+    
+    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+    const { data, error } = await query;
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/clientes/:id - Obtener un cliente específico
+app.get('/api/clientes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/clientes - Crear nuevo cliente
+app.post('/api/clientes', async (req, res) => {
+  try {
+    const clienteData = req.body;
+    const { data, error } = await supabase
+      .from('clientes')
+      .insert(clienteData)
+      .select()
+      .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/clientes/:id - Actualizar cliente
+app.put('/api/clientes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cambios = req.body;
+    const { data, error } = await supabase
+      .from('clientes')
+      .update(cambios)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/clientes/:id - Eliminar cliente
+app.delete('/api/clientes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabase
+      .from('clientes')
+      .delete()
+      .eq('id', id);
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, message: 'Cliente eliminado correctamente' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+      // ---------------------------------------------------------------------
+// CRUD Pólizas
+// ---------------------------------------------------------------------
+
+app.get('/api/polizas', async (req, res) => {
+  try {
+    const { cliente_id, buscar, limite = 50 } = req.query;
+    let query = supabase.from('polizas').select('*');
+    
+    if (cliente_id) query = query.eq('cliente_id', cliente_id);
+    if (buscar) query = query.or(`numero_poliza.ilike.%${buscar}%,compania.ilike.%${buscar}%`);
+    
+    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+    const { data, error } = await query;
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/polizas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('polizas')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) return res.status(404).json({ error: 'Póliza no encontrada' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/polizas', async (req, res) => {
+  try {
+    const polizaData = req.body;
+    const { data, error } = await supabase
+      .from('polizas')
+      .insert(polizaData)
+      .select()
+      .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/polizas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cambios = req.body;
+    const { data, error } = await supabase
+      .from('polizas')
+      .update(cambios)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/polizas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabase
+      .from('polizas')
+      .delete()
+      .eq('id', id);
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, message: 'Póliza eliminada correctamente' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------
+// CRUD Siniestros
+// ---------------------------------------------------------------------
+
+app.get('/api/siniestros', async (req, res) => {
+  try {
+    const { poliza_id, buscar, limite = 50 } = req.query;
+    let query = supabase.from('siniestros').select('*');
+    
+    if (poliza_id) query = query.eq('poliza_id', poliza_id);
+    if (buscar) query = query.or(`numero_siniestro.ilike.%${buscar}%,descripcion.ilike.%${buscar}%`);
+    
+    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+    const { data, error } = await query;
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/siniestros/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('siniestros')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) return res.status(404).json({ error: 'Siniestro no encontrado' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/siniestros', async (req, res) => {
+  try {
+    const siniestroData = req.body;
+    const { data, error } = await supabase
+      .from('siniestros')
+      .insert(siniestroData)
+      .select()
+      .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/siniestros/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cambios = req.body;
+    const { data, error } = await supabase
+      .from('siniestros')
+      .update(cambios)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/siniestros/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabase
+      .from('siniestros')
+      .delete()
+      .eq('id', id);
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, message: 'Siniestro eliminado correctamente' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
     password += charset.charAt(Math.floor(Math.random() * charset.length));
   }
   return password;
