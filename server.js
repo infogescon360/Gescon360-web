@@ -584,24 +584,23 @@ function generateStrongPassword(length = 12) {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
   let password = '';
   for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+}
 
-      // ---------------------------------------------------------------------
-// CRUD Clientes
+// ---------------------------------------------------------------------
+// CRUD Clientes, Pólizas y Siniestros
 // ---------------------------------------------------------------------
 
-// GET /api/clientes - Listar todos los clientes
+// CRUD Clientes
 app.get('/api/clientes', async (req, res) => {
   try {
     const { buscar, limite = 50 } = req.query;
     let query = supabase.from('clientes').select('*');
-    
-    if (buscar) {
-      query = query.or(`nombre.ilike.%${buscar}%,apellidos.ilike.%${buscar}%,dni.ilike.%${buscar}%,email.ilike.%${buscar}%`);
-    }
-    
+    if (buscar) query = query.or(`nombre.ilike.%${buscar}%,apellidos.ilike.%${buscar}%,dni.ilike.%${buscar}%,email.ilike.%${buscar}%`);
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
     const { data, error } = await query;
-    
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -609,16 +608,10 @@ app.get('/api/clientes', async (req, res) => {
   }
 });
 
-// GET /api/clientes/:id - Obtener un cliente específico
 app.get('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase
-      .from('clientes')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
+    const { data, error } = await supabase.from('clientes').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Cliente no encontrado' });
     res.json(data);
   } catch (e) {
@@ -626,16 +619,9 @@ app.get('/api/clientes/:id', async (req, res) => {
   }
 });
 
-// POST /api/clientes - Crear nuevo cliente
 app.post('/api/clientes', async (req, res) => {
   try {
-    const clienteData = req.body;
-    const { data, error } = await supabase
-      .from('clientes')
-      .insert(clienteData)
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('clientes').insert(req.body).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.status(201).json(data);
   } catch (e) {
@@ -643,18 +629,10 @@ app.post('/api/clientes', async (req, res) => {
   }
 });
 
-// PUT /api/clientes/:id - Actualizar cliente
 app.put('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const cambios = req.body;
-    const { data, error } = await supabase
-      .from('clientes')
-      .update(cambios)
-      .eq('id', id)
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('clientes').update(req.body).eq('id', id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -662,37 +640,26 @@ app.put('/api/clientes/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/clientes/:id - Eliminar cliente
 app.delete('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase
-      .from('clientes')
-      .delete()
-      .eq('id', id);
-    
+    const { error } = await supabase.from('clientes').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ ok: true, message: 'Cliente eliminado correctamente' });
+    res.json({ ok: true, message: 'Cliente eliminado' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-      // ---------------------------------------------------------------------
 // CRUD Pólizas
-// ---------------------------------------------------------------------
-
 app.get('/api/polizas', async (req, res) => {
   try {
     const { cliente_id, buscar, limite = 50 } = req.query;
     let query = supabase.from('polizas').select('*');
-    
     if (cliente_id) query = query.eq('cliente_id', cliente_id);
     if (buscar) query = query.or(`numero_poliza.ilike.%${buscar}%,compania.ilike.%${buscar}%`);
-    
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
     const { data, error } = await query;
-    
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -703,12 +670,7 @@ app.get('/api/polizas', async (req, res) => {
 app.get('/api/polizas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase
-      .from('polizas')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
+    const { data, error } = await supabase.from('polizas').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Póliza no encontrada' });
     res.json(data);
   } catch (e) {
@@ -718,13 +680,7 @@ app.get('/api/polizas/:id', async (req, res) => {
 
 app.post('/api/polizas', async (req, res) => {
   try {
-    const polizaData = req.body;
-    const { data, error } = await supabase
-      .from('polizas')
-      .insert(polizaData)
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('polizas').insert(req.body).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.status(201).json(data);
   } catch (e) {
@@ -735,14 +691,7 @@ app.post('/api/polizas', async (req, res) => {
 app.put('/api/polizas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const cambios = req.body;
-    const { data, error } = await supabase
-      .from('polizas')
-      .update(cambios)
-      .eq('id', id)
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('polizas').update(req.body).eq('id', id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -753,33 +702,23 @@ app.put('/api/polizas/:id', async (req, res) => {
 app.delete('/api/polizas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase
-      .from('polizas')
-      .delete()
-      .eq('id', id);
-    
+    const { error } = await supabase.from('polizas').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ ok: true, message: 'Póliza eliminada correctamente' });
+    res.json({ ok: true, message: 'Póliza eliminada' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ---------------------------------------------------------------------
 // CRUD Siniestros
-// ---------------------------------------------------------------------
-
 app.get('/api/siniestros', async (req, res) => {
   try {
     const { poliza_id, buscar, limite = 50 } = req.query;
     let query = supabase.from('siniestros').select('*');
-    
     if (poliza_id) query = query.eq('poliza_id', poliza_id);
     if (buscar) query = query.or(`numero_siniestro.ilike.%${buscar}%,descripcion.ilike.%${buscar}%`);
-    
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
     const { data, error } = await query;
-    
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -790,12 +729,7 @@ app.get('/api/siniestros', async (req, res) => {
 app.get('/api/siniestros/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase
-      .from('siniestros')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
+    const { data, error } = await supabase.from('siniestros').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Siniestro no encontrado' });
     res.json(data);
   } catch (e) {
@@ -805,13 +739,7 @@ app.get('/api/siniestros/:id', async (req, res) => {
 
 app.post('/api/siniestros', async (req, res) => {
   try {
-    const siniestroData = req.body;
-    const { data, error } = await supabase
-      .from('siniestros')
-      .insert(siniestroData)
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('siniestros').insert(req.body).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.status(201).json(data);
   } catch (e) {
@@ -822,14 +750,7 @@ app.post('/api/siniestros', async (req, res) => {
 app.put('/api/siniestros/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const cambios = req.body;
-    const { data, error } = await supabase
-      .from('siniestros')
-      .update(cambios)
-      .eq('id', id)
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('siniestros').update(req.body).eq('id', id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -840,21 +761,13 @@ app.put('/api/siniestros/:id', async (req, res) => {
 app.delete('/api/siniestros/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase
-      .from('siniestros')
-      .delete()
-      .eq('id', id);
-    
+    const { error } = await supabase.from('siniestros').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ ok: true, message: 'Siniestro eliminado correctamente' });
+    res.json({ ok: true, message: 'Siniestro eliminado' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-    password += charset.charAt(Math.floor(Math.random() * charset.length));
-  }
-  return password;
-}
 app.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log('📍 Endpoints:');
@@ -871,7 +784,6 @@ app.listen(PORT, () => {
   console.log('   GET    /api/reportes/estadisticas');
   console.log('   POST   /api/expedientes/importar');
 });
-
 
 
 
