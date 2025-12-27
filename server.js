@@ -600,8 +600,8 @@ function generateStrongPassword(length = 12) {
 // CRUD Clientes
 app.get('/api/clientes', async (req, res) => {
   try {
-    const { buscar, limite = 50 } = req.query;
-    let query = supabase.from('clientes').select('*');
+    const { buscar, supabaseAdmin.from('clientes') = 50 } = req.query;
+    let query = supabaseAdmin.from('clientes').select('*');
     if (buscar) query = query.or(`nombre.ilike.%${buscar}%,apellidos.ilike.%${buscar}%,dni.ilike.%${buscar}%,email.ilike.%${buscar}%`);
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
     const { data, error } = await query;
@@ -615,7 +615,7 @@ app.get('/api/clientes', async (req, res) => {
 app.get('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('clientes').select('*').eq('id', id).single();
+    const { data, error } = await supabaseAdmin.from('clientes').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Cliente no encontrado' });
     res.json(data);
   } catch (e) {
@@ -625,7 +625,7 @@ app.get('/api/clientes/:id', async (req, res) => {
 
 app.post('/api/clientes', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('clientes').insert(req.body).select().single();
+    const { data, error } = await supabaseAdmin.from('clientes').insert(req.body).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.status(201).json(data);
   } catch (e) {
@@ -636,7 +636,7 @@ app.post('/api/clientes', async (req, res) => {
 app.put('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('clientes').update(req.body).eq('id', id).select().single();
+    const { data, error } = await supabaseAdmin.from('clientes').update(req.body).eq('id', id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -647,7 +647,7 @@ app.put('/api/clientes/:id', async (req, res) => {
 app.delete('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase.from('clientes').delete().eq('id', id);
+    const { error } = await supabaseAdmin.from('clientes').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ ok: true, message: 'Cliente eliminado' });
   } catch (e) {
@@ -659,7 +659,7 @@ app.delete('/api/clientes/:id', async (req, res) => {
 app.get('/api/polizas', async (req, res) => {
   try {
     const { cliente_id, buscar, limite = 50 } = req.query;
-    let query = supabase.from('polizas').select('*');
+    let query = supabaseAdmin.from('polizas').select('*');
     if (cliente_id) query = query.eq('cliente_id', cliente_id);
     if (buscar) query = query.or(`numero_poliza.ilike.%${buscar}%,compania.ilike.%${buscar}%`);
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
@@ -674,7 +674,7 @@ app.get('/api/polizas', async (req, res) => {
 app.get('/api/polizas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('polizas').select('*').eq('id', id).single();
+    const { data, error } = await supabaseAdmin.from('polizas').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Póliza no encontrada' });
     res.json(data);
   } catch (e) {
@@ -684,7 +684,7 @@ app.get('/api/polizas/:id', async (req, res) => {
 
 app.post('/api/polizas', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('polizas').insert(req.body).select().single();
+    const { data, error } = await supabaseAdmin.from('polizas').insert(req.body).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.status(201).json(data);
   } catch (e) {
@@ -695,7 +695,7 @@ app.post('/api/polizas', async (req, res) => {
 app.put('/api/polizas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('polizas').update(req.body).eq('id', id).select().single();
+    const { data, error } = await supabaseAdmin.from('polizas').update(req.body).eq('id', id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -706,7 +706,7 @@ app.put('/api/polizas/:id', async (req, res) => {
 app.delete('/api/polizas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase.from('polizas').delete().eq('id', id);
+    const { error } = await supabaseAdmin.from('polizas').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ ok: true, message: 'Póliza eliminada' });
   } catch (e) {
@@ -718,7 +718,7 @@ app.delete('/api/polizas/:id', async (req, res) => {
 app.get('/api/siniestros', async (req, res) => {
   try {
     const { poliza_id, buscar, limite = 50 } = req.query;
-    let query = supabase.from('siniestros').select('*');
+    let query = supabaseAdmin.from('siniestros').select('*');
     if (poliza_id) query = query.eq('poliza_id', poliza_id);
     if (buscar) query = query.or(`numero_siniestro.ilike.%${buscar}%,descripcion.ilike.%${buscar}%`);
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
@@ -733,7 +733,7 @@ app.get('/api/siniestros', async (req, res) => {
 app.get('/api/siniestros/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('siniestros').select('*').eq('id', id).single();
+    const { data, error } = await supabaseAdmin.from('siniestros').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Siniestro no encontrado' });
     res.json(data);
   } catch (e) {
@@ -743,7 +743,7 @@ app.get('/api/siniestros/:id', async (req, res) => {
 
 app.post('/api/siniestros', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('siniestros').insert(req.body).select().single();
+    const { data, error } = await supabaseAdmin.from('siniestros').insert(req.body).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.status(201).json(data);
   } catch (e) {
@@ -754,7 +754,7 @@ app.post('/api/siniestros', async (req, res) => {
 app.put('/api/siniestros/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('siniestros').update(req.body).eq('id', id).select().single();
+    const { data, error } = await supabaseAdmin.from('siniestros').update(req.body).eq('id', id).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
@@ -765,7 +765,7 @@ app.put('/api/siniestros/:id', async (req, res) => {
 app.delete('/api/siniestros/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { error } = await supabase.from('siniestros').delete().eq('id', id);
+    const { error } = await supabaseAdmin.from('siniestros').delete().eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ ok: true, message: 'Siniestro eliminado' });
   } catch (e) {
