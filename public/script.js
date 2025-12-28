@@ -370,23 +370,48 @@ function hideCreateAdminButton() {
 // Show/hide main containers
 function showAuth() {
     console.log('Showing auth container');
-    document.getElementById('authContainer').classList.remove('d-none');
-    document.getElementById('appContainer').classList.add('d-none');
-}
-
-function showApp() {
-    console.log('Showing app container');
     const authContainer = document.getElementById('authContainer');
+    const appContainer = document.getElementById('appContainer');
+    
+    // Forzar ocultación del app y mostrar auth
+    if (authContainer) {
+        authContainer.classList.remove('d-none');
+        authContainer.style.display = 'block';
+        authContainer.style.visibility = 'visible';
+        authContainer.style.opacity = '1';
+    }
+    
+    if (appContainer) {
+        appContainer.classList.add('d-none');
+        appContainer.style.display = 'none';
+        appContainer.style.visibility = 'hidden';
+        appContainer.style.opacity = '0';
+    }
+    
+    // Limpiar formulario
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    if (loginEmail) loginEmail.value = '';
+    if (loginPassword) loginPassword.value = '';
+}   const authContainer = document.getElementById('authContainer');
     const appContainer = document.getElementById('appContainer');
     const loadingOverlay = document.getElementById('loadingOverlay');
 
     // Force hide/show using inline styles (stronger than classes)
+    // CRÍTICO: Ocultar auth completamente
     authContainer.classList.add('d-none');
-    authContainer.style.display = 'none'; // Inline override
-
+    authContainer.style.display = 'none !important';
+    authContainer.style.visibility = 'hidden';
+    authContainer.style.opacity = '0';
+    authContainer.style.position = 'absolute';
+    authContainer.style.zIndex = '-9999';
+    // CRÍTICO: Mostrar app completamente
     appContainer.classList.remove('d-none');
-    appContainer.style.display = 'block'; // Inline override
-
+    appContainer.style.display = 'flex !important';
+    appContainer.style.visibility = 'visible';
+    appContainer.style.opacity = '1';
+    appContainer.style.position = 'relative';
+    appContainer.style.zIndex = '1';
     // Force hide loading overlay
     loadingOverlay.classList.remove('show');
     loadingOverlay.style.display = 'none'; // Inline override

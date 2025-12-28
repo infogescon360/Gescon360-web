@@ -1237,10 +1237,10 @@ body {
 }
 
 /* Controlar visibilidad de contenedores de autenticación */
-#loginContainer {
-        display: block;
+#authContainer {        display: block;
     }
 
 #appContainer {
         display: none; /* Oculto por defecto hasta que el usuario inicie sesión */
 }
+
