@@ -1,46 +1,46 @@
 // server.js - Backend seguro para gestión de roles de administrador y tareas
-
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-
 // Si tu Node es < 18, descomenta esto y añade node-fetch como dependencia:
 // import fetch from 'node-fetch';
+import { createClient } from '@supabase/supabase-js';
 
 const app = express();
+
 app.use(express.json());
 app.use(cors());
 app.use(express.static('public'));
 
 // Configurar CSP para permitir SheetJS CDN
 app.use((req, res, next) => {
-    res.setHeader(
-          'Content-Security-Policy',
-                  "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
-        );
-    next();
-  });
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
+  );
+  next();
+});
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_KEY = process.env.SUPABASE_KEY; // clave para @supabase/supabase-js (igual que la que usas en script.js)
+const SUPABASE_KEY = process.env.SUPABASE_KEY; // clave pública / anon para consultas
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_KEY) {
   console.error('ERROR: Faltan variables de entorno requeridas');
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------
-// Supabase client (para expedientes/tareas)
-// ---------------------------------------------------------------------
-import { createClient } from '@supabase/supabase-js';
-
+// Cliente normal para datos (expedientes, tareas, etc.)
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Cliente de servicio SOLO para auth/administración
+const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // ---------------------------------------------------------------------
 // Helpers de autenticación / roles
 // ---------------------------------------------------------------------
+
 async function getUserFromToken(accessToken) {
   const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: {
@@ -96,9 +96,80 @@ async function updateAdminStatus(targetUserId, makeAdmin) {
   return await response.json();
 }
 
+// ============================================================================
+// AUTENTICACIÓN BÁSICA: LOGIN CON EMAIL + PASSWORD
+// Devuelve: access_token, email, role (desde tabla profiles) y esAdmin bool
+// ============================================================================
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y contraseña son obligatorios' });
+    }
+
+    // 1) Login contra Supabase Auth usando service role
+    const { data: signInData, error: signInError } =
+      await supabaseAuth.auth.signInWithPassword({ email, password });
+
+    if (signInError || !signInData.session) {
+      console.error('Error en signInWithPassword:', signInError);
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const { session, user } = signInData;
+    const accessToken = session.access_token;
+    const userId = user.id;
+
+    // 2) Obtener rol desde tabla profiles
+    const { data: profile, error: profileError } = await supabaseAuth
+      .from('profiles')
+      .select('role, status')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('Error obteniendo perfil:', profileError);
+    }
+
+    const role = profile?.role || 'user';
+    const status = profile?.status || 'active';
+
+    if (status !== 'active') {
+      return res.status(403).json({ error: 'Usuario inactivo o bloqueado' });
+    }
+
+    // 3) Comprobar si es super admin (opcional, para panel avanzado)
+    let esSuperAdmin = false;
+    try {
+      const adminInfo = await isUserAdmin(userId);
+      esSuperAdmin = adminInfo === true;
+    } catch (e) {
+      esSuperAdmin = false;
+    }
+
+    return res.json({
+      ok: true,
+      accessToken,
+      user: {
+        id: userId,
+        email: user.email,
+        role,
+        status,
+        isSuperAdmin: esSuperAdmin,
+      },
+    });
+  } catch (e) {
+    console.error('Error en /api/login:', e);
+    return res.status(500).json({ error: 'Error interno en login' });
+  }
+});
+
 // ---------------------------------------------------------------------
 // Endpoints de administración
 // ---------------------------------------------------------------------
+
 app.post('/admin/set-admin', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -109,8 +180,8 @@ app.post('/admin/set-admin', async (req, res) => {
     }
 
     const accessToken = authHeader.substring(7);
-
     const { targetUserId, makeAdmin } = req.body;
+
     if (!targetUserId || typeof makeAdmin !== 'boolean') {
       return res.status(400).json({
         error:
@@ -140,7 +211,6 @@ app.post('/admin/set-admin', async (req, res) => {
     }
 
     const updatedUser = await updateAdminStatus(targetUserId, makeAdmin);
-
     console.log(
       `✓ Usuario ${callerUser.email} ${
         makeAdmin ? 'promovió' : 'revocó'
@@ -192,6 +262,7 @@ app.get('/admin/check', async (req, res) => {
 // ---------------------------------------------------------------------
 // Endpoints de configuración y health
 // ---------------------------------------------------------------------
+
 app.get('/config', (req, res) => {
   res.json({
     supabaseUrl: SUPABASE_URL,
@@ -206,15 +277,14 @@ app.get('/health', (req, res) => {
 // ---------------------------------------------------------------------
 // Endpoints de tareas / expedientes
 // ---------------------------------------------------------------------
+
 app.get('/api/tareas', async (req, res) => {
   try {
     const { gestorId, estado, vencenHoy } = req.query;
-
     let query = supabase.from('expedientes').select('*');
 
     if (gestorId) query = query.eq('gestor_id', gestorId);
     if (estado) query = query.eq('estado', estado);
-
     if (vencenHoy === 'true') {
       const hoy = new Date();
       const iso = hoy.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -248,6 +318,7 @@ app.patch('/api/tareas/:id', async (req, res) => {
         .select('*')
         .eq('id', id)
         .single();
+
       if (getErr) return res.status(500).json({ error: getErr.message });
 
       const archivado = {
@@ -259,6 +330,7 @@ app.patch('/api/tareas/:id', async (req, res) => {
       const { error: insErr } = await supabase
         .from('expedientes_archivados')
         .insert(archivado);
+
       if (insErr) return res.status(500).json({ error: insErr.message });
 
       await supabase.from('expedientes').delete().eq('id', id);
@@ -281,7 +353,6 @@ app.patch('/api/tareas/:id', async (req, res) => {
   }
 });
 
-
 // ---------------------------------------------------------------------
 // Endpoints adicionales para búsqueda, duplicados, archivados y reportes
 // ---------------------------------------------------------------------
@@ -290,15 +361,18 @@ app.patch('/api/tareas/:id', async (req, res) => {
 app.get('/api/expedientes/buscar', async (req, res) => {
   try {
     const { expediente, poliza, sgr, dni } = req.query;
+
     let query = supabase.from('expedientes').select('*');
-    
+
     if (expediente) query = query.ilike('numero_expediente', `%${expediente}%`);
     if (poliza) query = query.ilike('numero_poliza', `%${poliza}%`);
     if (sgr) query = query.ilike('numero_sgr', `%${sgr}%`);
     if (dni) query = query.ilike('dni', `%${dni}%`);
-    
+
     const { data, error } = await query.limit(100);
+
     if (error) return res.status(500).json({ error: error.message });
+
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -309,27 +383,32 @@ app.get('/api/expedientes/buscar', async (req, res) => {
 app.post('/api/duplicados/verificar', async (req, res) => {
   try {
     const { expedientes } = req.body;
+
     if (!Array.isArray(expedientes)) {
       return res.status(400).json({ error: 'Se requiere un array de expedientes' });
     }
-    
+
     const duplicados = [];
+
     for (const exp of expedientes) {
       const { data, error } = await supabase
         .from('expedientes')
         .select('*')
-        .or(`numero_expediente.eq.${exp.numero_expediente},numero_poliza.eq.${exp.numero_poliza},dni.eq.${exp.dni}`);
-      
+        .or(
+          `numero_expediente.eq.${exp.numero_expediente},numero_poliza.eq.${exp.numero_poliza},dni.eq.${exp.dni}`
+        );
+
       if (error) continue;
+
       if (data && data.length > 0) {
         duplicados.push({
           nuevo: exp,
           existente: data[0],
-          motivo: 'Coincide expediente, póliza o DNI'
+          motivo: 'Coincide expediente, póliza o DNI',
         });
       }
     }
-    
+
     res.json({ duplicados, total: duplicados.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -340,16 +419,19 @@ app.post('/api/duplicados/verificar', async (req, res) => {
 app.get('/api/archivados', async (req, res) => {
   try {
     const { motivo, desde, hasta, limite = 50 } = req.query;
+
     let query = supabase.from('expedientes_archivados').select('*');
-    
+
     if (motivo) query = query.eq('motivo_archivo', motivo);
     if (desde) query = query.gte('created_at', desde);
     if (hasta) query = query.lte('created_at', hasta);
-    
+
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
-    
+
     const { data, error } = await query;
+
     if (error) return res.status(500).json({ error: error.message });
+
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -360,29 +442,29 @@ app.get('/api/archivados', async (req, res) => {
 app.post('/api/archivados/:id/restaurar', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Obtener el expediente archivado
     const { data: archivado, error: getErr } = await supabase
       .from('expedientes_archivados')
       .select('*')
       .eq('id', id)
       .single();
-    
+
     if (getErr) return res.status(500).json({ error: getErr.message });
-    
+
     // Insertar en expedientes activos
     const { error: insErr } = await supabase
       .from('expedientes')
       .insert({
         ...archivado,
-        estado: 'En proceso'
+        estado: 'En proceso',
       });
-    
+
     if (insErr) return res.status(500).json({ error: insErr.message });
-    
+
     // Eliminar de archivados
     await supabase.from('expedientes_archivados').delete().eq('id', id);
-    
+
     res.json({ ok: true, message: 'Expediente restaurado correctamente' });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -392,34 +474,36 @@ app.post('/api/archivados/:id/restaurar', async (req, res) => {
 // Generar reporte de estadísticas
 app.get('/api/reportes/estadisticas', async (req, res) => {
   try {
-    const { desde, hasta } = req.query;
-    
     // Expedientes totales
-    let queryTotal = supabase.from('expedientes').select('*', { count: 'exact', head: true });
+    let queryTotal = supabase
+      .from('expedientes')
+      .select('*', { count: 'exact', head: true });
+
     const { count: total } = await queryTotal;
-    
+
     // Por estado
     const estados = ['Pendiente', 'En proceso', 'Finalizado', 'Archivado'];
     const porEstado = {};
-    
+
     for (const estado of estados) {
       const { count } = await supabase
         .from('expedientes')
         .select('*', { count: 'exact', head: true })
         .eq('estado', estado);
+
       porEstado[estado] = count || 0;
     }
-    
+
     // Archivados
     const { count: archivados } = await supabase
       .from('expedientes_archivados')
       .select('*', { count: 'exact', head: true });
-    
+
     res.json({
       total,
       porEstado,
       archivados,
-      fecha_generacion: new Date().toISOString()
+      fecha_generacion: new Date().toISOString(),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -430,17 +514,17 @@ app.get('/api/reportes/estadisticas', async (req, res) => {
 app.post('/api/expedientes/importar', async (req, res) => {
   try {
     const { expedientes, opciones } = req.body;
-    
+
     if (!Array.isArray(expedientes)) {
       return res.status(400).json({ error: 'Se requiere un array de expedientes' });
     }
-    
+
     const resultados = {
       exitosos: [],
       duplicados: [],
-      errores: []
+      errores: [],
     };
-    
+
     for (const exp of expedientes) {
       try {
         // Verificar duplicados si está habilitado
@@ -450,40 +534,37 @@ app.post('/api/expedientes/importar', async (req, res) => {
             .select('id')
             .eq('numero_expediente', exp.numero_expediente)
             .single();
-          
+
           if (existe) {
             resultados.duplicados.push(exp);
             continue;
           }
         }
-        
+
         // Insertar expediente
         const { data, error } = await supabase
           .from('expedientes')
           .insert(exp)
           .select()
           .single();
-        
+
         if (error) throw error;
+
         resultados.exitosos.push(data);
       } catch (err) {
         resultados.errores.push({
           expediente: exp,
-          error: err.message
+          error: err.message,
         });
       }
     }
-    
+
     res.json(resultados);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ---------------------------------------------------------------------
-// Arranque del servidor
-// ---------------------------------------------------------------------
-const PORT = process.env.PORT || 3000;
 // ============================================================================
 // ADMIN: CREACIÓN DE USUARIOS DESDE EL PANEL DE SEGURIDAD
 // ============================================================================
@@ -498,7 +579,10 @@ app.post('/admin/users', async (req, res) => {
     }
 
     // Verificar sesión y rol admin igual que en /admin/check
-    const { data: { user }, error: authError } = supabase.auth.getUser
+    const {
+      data: { user },
+      error: authError,
+    } = supabase.auth.getUser
       ? await supabase.auth.getUser(token)
       : { data: { user: null }, error: { message: 'Método getUser no disponible' } };
 
@@ -506,9 +590,6 @@ app.post('/admin/users', async (req, res) => {
       return res.status(401).json({ error: 'Sesión no válida' });
     }
 
-    // Aquí asumimos que ya tienes alguna forma de comprobar si es admin.
-    // Si en tu backend ya consultas la tabla profiles o similar para /admin/check,
-    // reutiliza esa lógica. A modo de ejemplo simple:
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('role')
@@ -526,51 +607,52 @@ app.post('/admin/users', async (req, res) => {
     }
 
     if (!email.endsWith('@gescon360.es')) {
-      return res.status(400).json({ error: 'El email debe pertenecer al dominio @gescon360.es' });
+      return res
+        .status(400)
+        .json({ error: 'El email debe pertenecer al dominio @gescon360.es' });
     }
 
     if (!['admin', 'user'].includes(role)) {
       return res.status(400).json({ error: 'Rol no válido. Debe ser "admin" o "user"' });
     }
 
-    // Generar contraseña temporal fuerte
     const tempPassword = generateStrongPassword();
 
-    // Crear usuario en Auth usando SERVICE_ROLE_KEY (supabaseAdmin)
-    const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: tempPassword,
-      email_confirm: true
-    });
+    const { data: createdUser, error: createError } =
+      await supabaseAuth.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+      });
 
     if (createError) {
       console.error('Error creando usuario en Auth:', createError);
-      return res.status(500).json({ error: 'No se pudo crear el usuario en Supabase Auth' });
+      return res
+        .status(500)
+        .json({ error: 'No se pudo crear el usuario en Supabase Auth' });
     }
 
     const userId = createdUser.user?.id;
 
-    // Crear/actualizar perfil en tabla profiles
-    const { error: profileUpsertError } = await supabaseAdmin
+    const { error: profileUpsertError } = await supabaseAuth
       .from('profiles')
       .upsert({
         id: userId,
         email,
         full_name: fullName || email.split('@')[0],
         role,
-        status: 'active'
+        status: 'active',
       });
 
     if (profileUpsertError) {
       console.error('Error actualizando perfil:', profileUpsertError);
-      // No se hace rollback del usuario Auth, pero se informa
     }
 
     return res.json({
       message: 'Usuario creado correctamente',
       email,
       role,
-      tempPassword
+      tempPassword,
     });
   } catch (e) {
     console.error('Error en /admin/users:', e);
@@ -578,7 +660,6 @@ app.post('/admin/users', async (req, res) => {
   }
 });
 
-// Función auxiliar para contraseña fuerte en backend
 function generateStrongPassword(length = 12) {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
   let password = '';
@@ -587,24 +668,28 @@ function generateStrongPassword(length = 12) {
   }
   return password;
 }
+
+// ---------------------------------------------------------------------
+// Arranque del servidor
+// ---------------------------------------------------------------------
+
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log('📍 Endpoints:');
-  console.log('   POST /admin/set-admin');
-  console.log('   GET  /admin/check');
-  console.log('   GET  /config');
-  console.log('   GET  /api/tareas');
-  console.log('   PATCH /api/tareas/:id');
-  console.log('   GET  /health');
-    console.log('   GET    /api/expedientes/buscar');
-  console.log('   POST   /api/duplicados/verificar');
-  console.log('   GET    /api/archivados');
-  console.log('   POST   /api/archivados/:id/restaurar');
-  console.log('   GET    /api/reportes/estadisticas');
-  console.log('   POST   /api/expedientes/importar');
+  console.log(' POST /api/login');
+  console.log(' POST /admin/set-admin');
+  console.log(' GET /admin/check');
+  console.log(' GET /config');
+  console.log(' GET /api/tareas');
+  console.log(' PATCH /api/tareas/:id');
+  console.log(' GET /health');
+  console.log(' GET /api/expedientes/buscar');
+  console.log(' POST /api/duplicados/verificar');
+  console.log(' GET /api/archivados');
+  console.log(' POST /api/archivados/:id/restaurar');
+  console.log(' GET /api/reportes/estadisticas');
+  console.log(' POST /api/expedientes/importar');
+  console.log(' POST /admin/users');
 });
-
-
-
-
-
