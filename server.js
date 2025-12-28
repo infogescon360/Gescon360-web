@@ -384,8 +384,7 @@ app.get('/api/archivados', async (req, res) => {
     if (desde) query = query.gte('fecha_archivo', desde);
 if (hasta) query = query.lte('fecha_archivo', hasta);
 query = query.order('fecha_archivo', { ascending: false }).limit(parseInt(limite));
-    
-    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+
     
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
@@ -527,8 +526,7 @@ app.get('/api/expedientes', async (req, res) => {
       );
     }
     
-    query = query
-      .order('created_at', { ascending: false })
+    query = query.order('id', { ascending: false })
       .range(parseInt(offset), parseInt(offset) + parseInt(limite) - 1);
     
     const { data, error, count } = await query;
@@ -587,15 +585,14 @@ app.post('/api/expedientes', async (req, res) => {
       });
     }
     
-    const { data, error } = await supabase
-      .from('expedientes')
-      .insert({
-        ...expediente,
-        estado: expediente.estado || 'Pendiente',
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
+ const { data, error } = await supabase
+  .from('expedientes')
+  .insert({
+    ...expediente,
+    estado: expediente.estado || 'Pendiente'
+  })
+  .select()
+  .single();
     
     if (error) return res.status(500).json({ error: error.message });
     
