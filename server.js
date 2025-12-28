@@ -381,8 +381,9 @@ app.get('/api/archivados', async (req, res) => {
     let query = supabase.from('expedientes_archivados').select('*');
     
     if (motivo) query = query.eq('motivo_archivo', motivo);
-    if (desde) query = query.gte('created_at', desde);
-    if (hasta) query = query.lte('created_at', hasta);
+    if (desde) query = query.gte('fecha_archivo', desde);
+if (hasta) query = query.lte('fecha_archivo', hasta);
+query = query.order('fecha_archivo', { ascending: false }).limit(parseInt(limite));
     
     query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
     
@@ -817,7 +818,9 @@ app.get('/api/clientes', async (req, res) => {
     const { buscar, limite = 50 } = req.query;
     let query = supabase.from('clientes').select('*');
     if (buscar) query = query.or(`nombre.ilike.%${buscar}%,apellidos.ilike.%${buscar}%,dni.ilike.%${buscar}%,email.ilike.%${buscar}%`);
-    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+    query = query
+  .order('id', { ascending: false })
+  .range(parseInt(offset), parseInt(offset) + parseInt(limite) - 1);
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
@@ -829,7 +832,14 @@ app.get('/api/clientes', async (req, res) => {
 app.get('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase.from('clientes').select('*').eq('id', id).single();
+    const { data, error } = await supabase
+  .from('expedientes')
+  .insert({
+    ...expediente,
+    estado: expediente.estado || 'Pendiente'
+  })
+  .select()
+  .single();
     if (error) return res.status(404).json({ error: 'Cliente no encontrado' });
     res.json(data);
   } catch (e) {
@@ -878,7 +888,7 @@ app.get('/api/polizas', async (req, res) => {
     let query = supabase.from('polizas').select('*');
     if (cliente_id) query = query.eq('cliente_id', cliente_id);
     if (buscar) query = query.or(`numero_poliza.ilike.%${buscar}%,compania.ilike.%${buscar}%`);
-    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+   query = query.order('id', { ascending: false }).limit(parseInt(limite));
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
@@ -939,7 +949,7 @@ app.get('/api/siniestros', async (req, res) => {
     let query = supabase.from('siniestros').select('*');
     if (poliza_id) query = query.eq('poliza_id', poliza_id);
     if (buscar) query = query.or(`numero_siniestro.ilike.%${buscar}%,descripcion.ilike.%${buscar}%`);
-    query = query.order('created_at', { ascending: false }).limit(parseInt(limite));
+    query = query.order('id', { ascending: false }).limit(parseInt(limite));
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
