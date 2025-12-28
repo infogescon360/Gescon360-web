@@ -547,6 +547,262 @@ app.post('/admin/users', async (req, res) => {
       password: tempPassword,
       email_confirm: true
     });
+// ============================================================================
+// CRUD COMPLETO DE EXPEDIENTES
+// ============================================================================
+
+// GET /api/expedientes - Listar todos los expedientes (con filtros opcionales)
+app.get('/api/expedientes', async (req, res) => {
+  try {
+    const { gestor_id, estado, buscar, limite = 100, offset = 0 } = req.query;
+    
+    let query = supabase.from('expedientes').select('*', { count: 'exact' });
+    
+    // Filtros opcionales
+    if (gestor_id) query = query.eq('gestor_id', gestor_id);
+    if (estado) query = query.eq('estado', estado);
+    if (buscar) {
+      query = query.or(
+        `numero_expediente.ilike.%${buscar}%,` +
+        `numero_poliza.ilike.%${buscar}%,` +
+        `numero_sgr.ilike.%${buscar}%,` +
+        `dni.ilike.%${buscar}%,` +
+        `cliente_nombre.ilike.%${buscar}%`
+      );
+    }
+    
+    query = query
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limite) - 1);
+    
+    const { data, error, count } = await query;
+    
+    if (error) return res.status(500).json({ error: error.message });
+    
+    res.json({
+      data,
+      total: count,
+      limite: parseInt(limite),
+      offset: parseInt(offset)
+    });
+  } catch (e) {
+    console.error('Error en GET /api/expedientes:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/expedientes/:id - Obtener un expediente por ID
+app.get('/api/expedientes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data, error } = await supabase
+      .from('expedientes')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      return res.status(404).json({ error: 'Expediente no encontrado' });
+    }
+    
+    res.json(data);
+  } catch (e) {
+    console.error('Error en GET /api/expedientes/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/expedientes - Crear un nuevo expediente
+app.post('/api/expedientes', async (req, res) => {
+  try {
+    const expediente = req.body;
+    
+    // Validaciones básicas
+    if (!expediente.numero_expediente) {
+      return res.status(400).json({ error: 'El número de expediente es obligatorio' });
+    }
+    
+    // Verificar duplicados
+    const { data: existe, error: checkError } = await supabase
+      .from('expedientes')
+      .select('id')
+      .eq('numero_expediente', expediente.numero_expediente)
+      .maybeSingle();
+    
+    if (existe) {
+      return res.status(409).json({ 
+        error: 'Ya existe un expediente con ese número',
+        expediente_existente_id: existe.id
+      });
+    }
+    
+    // Insertar expediente
+    const { data, error } = await supabase
+      .from('expedientes')
+      .insert({
+        ...expediente,
+        estado: expediente.estado || 'Pendiente',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error insertando expediente:', error);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    res.status(201).json(data);
+  } catch (e) {
+    console.error('Error en POST /api/expedientes:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/expedientes/:id - Actualizar un expediente completo
+app.put('/api/expedientes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cambios = req.body;
+    
+    // Actualizar expediente
+    const { data, error } = await supabase
+      .from('expedientes')
+      .update({
+        ...cambios,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Expediente no encontrado' });
+      }
+      return res.status(500).json({ error: error.message });
+    }
+    
+    res.json(data);
+  } catch (e) {
+    console.error('Error en PUT /api/expedientes/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/expedientes/:id - Eliminar un expediente
+app.delete('/api/expedientes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Primero obtener el expediente para archivarlo
+    const { data: expediente, error: getError } = await supabase
+      .from('expedientes')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (getError) {
+      return res.status(404).json({ error: 'Expediente no encontrado' });
+    }
+    
+    // Archivar el expediente antes de eliminarlo
+    const { error: archiveError } = await supabase
+      .from('expedientes_archivados')
+      .insert({
+        ...expediente,
+        motivo_archivo: 'Eliminado manualmente',
+        fecha_archivo: new Date().toISOString()
+      });
+    
+    if (archiveError) {
+      console.warn('No se pudo archivar el expediente antes de eliminarlo:', archiveError);
+      // Continuamos con la eliminación de todos modos
+    }
+    
+    // Eliminar el expediente
+    const { error: deleteError } = await supabase
+      .from('expedientes')
+      .delete()
+      .eq('id', id);
+    
+    if (deleteError) {
+      return res.status(500).json({ error: deleteError.message });
+    }
+    
+    res.json({ 
+      ok: true, 
+      message: 'Expediente eliminado correctamente',
+      archivado: !archiveError
+    });
+  } catch (e) {
+    console.error('Error en DELETE /api/expedientes/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/expedientes/:id/seguimientos - Obtener seguimientos de un expediente
+app.get('/api/expedientes/:id/seguimientos', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data, error } = await supabase
+      .from('seguimientos')
+      .select('*')
+      .eq('expediente_id', id)
+      .order('fecha', { ascending: false });
+    
+    if (error) return res.status(500).json({ error: error.message });
+    
+    res.json(data || []);
+  } catch (e) {
+    console.error('Error en GET /api/expedientes/:id/seguimientos:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/expedientes/:id/seguimientos - Añadir seguimiento a un expediente
+app.post('/api/expedientes/:id/seguimientos', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { comentario, tipo, usuario_id } = req.body;
+    
+    if (!comentario) {
+      return res.status(400).json({ error: 'El comentario es obligatorio' });
+    }
+    
+    const { data, error } = await supabase
+      .from('seguimientos')
+      .insert({
+        expediente_id: id,
+        comentario,
+        tipo: tipo || 'nota',
+        usuario_id: usuario_id || null,
+        fecha: new Date().toISOString()
+      })
+      .select()
+      .single();
+    console.log(' GET /api/expedientes');
+console.log(' GET /api/expedientes/:id');
+console.log(' POST /api/expedientes');
+console.log(' PUT /api/expedientes/:id');
+console.log(' DELETE /api/expedientes/:id');
+console.log(' GET /api/expedientes/:id/seguimientos');
+console.log(' POST /api/expedientes/:id/seguimientos');
+
+    if (error) return res.status(500).json({ error: error.message });
+    
+    res.status(201).json(data);
+  } catch (e) {
+    console.error('Error en POST /api/expedientes/:id/seguimientos:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================================
+// FIN CRUD EXPEDIENTES
+// ============================================================================
 
     if (createError) {
       console.error('Error creando usuario en Auth:', createError);
