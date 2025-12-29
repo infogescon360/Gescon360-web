@@ -88,6 +88,9 @@ let statusChartInstance = null;
 let currentArchivePage = 1;
 const ITEMS_PER_ARCHIVE_PAGE = 50;
 
+// Variable global para la suscripción Realtime
+let realtimeSubscription = null;
+
 // 3. Timeout de 20 Minutos por Inactividad
 let inactivityTimer;
 const INACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 minutos en milisegundos
@@ -268,9 +271,18 @@ async function checkAuthStatus() {
                 console.warn('Could not verify admin status', e);
             }
 
+            // Obtener nombre real del perfil para coincidencias de Realtime
+            let fullName = session.user.email.split('@')[0];
+            const { data: profile } = await supabaseClient
+                .from('profiles')
+                .select('full_name')
+                .eq('id', session.user.id)
+                .single();
+            if (profile && profile.full_name) fullName = profile.full_name;
+
             currentUser = {
                 email: session.user.email,
-                name: session.user.email.split('@')[0],
+                name: fullName,
                 id: session.user.id,
                 isAdmin: isAdmin
             };
@@ -532,9 +544,18 @@ async function login() {
                 console.warn('Could not verify admin status', e);
             }
 
+            // Obtener nombre real del perfil
+            let fullName = data.user.email.split('@')[0];
+            const { data: profile } = await supabaseClient
+                .from('profiles')
+                .select('full_name')
+                .eq('id', data.user.id)
+                .single();
+            if (profile && profile.full_name) fullName = profile.full_name;
+
             currentUser = {
                 email: data.user.email,
-                name: data.user.email.split('@')[0],
+                name: fullName,
                 id: data.user.id,
                 isAdmin: isAdmin
             };
@@ -571,6 +592,12 @@ async function logout() {
 
         if (error) throw error;
 
+        // Desuscribirse de Realtime
+        if (realtimeSubscription) {
+            supabaseClient.removeChannel(realtimeSubscription);
+            realtimeSubscription = null;
+        }
+
         // Limpiar estado de autenticación y timers
         document.body.classList.remove('authenticated');
         clearTimeout(inactivityTimer);
@@ -585,6 +612,10 @@ async function logout() {
     } catch (error) {
         console.error('Logout error:', error);
         // Even if there's an error, clear the local session
+        if (realtimeSubscription) {
+            supabaseClient.removeChannel(realtimeSubscription);
+            realtimeSubscription = null;
+        }
         document.body.classList.remove('authenticated');
         clearTimeout(inactivityTimer);
         const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
@@ -656,6 +687,7 @@ function showSection(sectionId) {
         if (sectionId === 'limits') loadSystemLimits();
         if (sectionId === 'config') loadGeneralConfig();
         if (sectionId === 'reports') loadReports();
+        if (sectionId === 'import') loadImportLogs();
     }
 }
 
@@ -1964,6 +1996,90 @@ async function distributeWorkload() {
     }
 }
 
+async function openReassignTasksModal() {
+    console.log('Abriendo modal de reasignación...');
+    const fromSelect = document.getElementById('reassignFromUser');
+    const toSelect = document.getElementById('reassignToUser');
+    
+    if (!fromSelect || !toSelect) return;
+    
+    showLoading();
+    try {
+        // Obtener usuarios para llenar los selectores
+        const { data: users, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('full_name');
+            
+        if (error) throw error;
+        
+        const optionsHtml = users.map(u => {
+            const name = u.full_name || u.email;
+            const statusLabel = u.status === 'active' ? '' : ` (${u.status})`;
+            return `<option value="${name}">${name}${statusLabel}</option>`;
+        }).join('');
+        
+        fromSelect.innerHTML = '<option value="">Seleccionar usuario origen...</option>' + optionsHtml;
+        toSelect.innerHTML = '<option value="">Seleccionar usuario destino...</option>' + optionsHtml;
+        
+        const modal = document.getElementById('reassignTasksModal');
+        if (modal) modal.classList.add('active');
+        
+    } catch (error) {
+        console.error('Error loading users for reassignment:', error);
+        showToast('danger', 'Error', 'No se pudieron cargar los usuarios.');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function executeReassignment() {
+    const fromUser = document.getElementById('reassignFromUser').value;
+    const toUser = document.getElementById('reassignToUser').value;
+    
+    if (!fromUser || !toUser) {
+        showToast('warning', 'Datos incompletos', 'Seleccione ambos usuarios.');
+        return;
+    }
+    
+    if (fromUser === toUser) {
+        showToast('warning', 'Error', 'El usuario de origen y destino no pueden ser el mismo.');
+        return;
+    }
+    
+    if (!confirm(`¿Está seguro de reasignar todas las tareas pendientes de "${fromUser}" a "${toUser}"?`)) return;
+    
+    showLoading();
+    try {
+        // Actualizar tareas pendientes
+        const { error, count } = await supabaseClient
+            .from('tareas')
+            .update({ responsable: toUser })
+            .eq('responsable', fromUser)
+            .neq('estado', 'Completada')
+            .neq('estado', 'Recobrado')
+            .neq('estado', 'Rehusado NO cobertura')
+            .neq('estado', 'Archivado')
+            .neq('estado', 'Datos NO válidos'); // Opcional: incluir o excluir según lógica de negocio
+            
+        if (error) throw error;
+        
+        showToast('success', 'Reasignación completada', `Las tareas han sido transferidas correctamente.`);
+        closeModal('reassignTasksModal');
+        
+        // Recargar si estamos en una vista relevante
+        const currentSection = document.querySelector('.content-section.active')?.id;
+        if (currentSection === 'admin') loadResponsibles();
+        if (currentSection === 'workload') loadWorkloadStats();
+        
+    } catch (error) {
+        console.error('Error reassigning tasks:', error);
+        showToast('danger', 'Error', 'Error al reasignar tareas: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
 async function loadWorkloadStats() {
     console.log('Cargando estadísticas de carga...');
     const tableBody = document.getElementById('workloadTable');
@@ -2571,7 +2687,14 @@ async function importarExpedientes() {
         }
         
         const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar);
-        hideLoading();
+
+        // REGISTRAR IMPORTACIÓN (LOG)
+        await saveImportLog({
+            fileName: file.name,
+            totalRecords: data.length,
+            duplicates: duplicadosEncontrados.length,
+            status: 'Completado'
+        });
 
         // PASO 4: Distribuir Tareas si está activado
         // REACTIVADO para cumplir con la lógica de "Pdte. revisión" y asignación equitativa específica
@@ -2579,11 +2702,13 @@ async function importarExpedientes() {
            await distribuirTareasImportadas(resultado.expedientes, distribuirEquitativamente);
         }
 
+        hideLoading();
         showToast('success', 'Importación Completada', 
             `Se importaron ${resultado.insertados} expedientes correctamente.`);
         
         // Recargar dashboard stats
         await loadDashboardStats();
+        loadImportLogs(); // Refrescar tabla de logs
 
     } catch (error) {
         console.error('Error importando expedientes:', error);
@@ -2595,8 +2720,29 @@ async function importarExpedientes() {
 // Función auxiliar para distribuir tareas tras importación
 async function distribuirTareasImportadas(expedientes, distribuirEquitativamente) {
     try {
-        showToast('info', 'Generando Tareas', 'Creando tareas para los expedientes importados...');
+        showToast('info', 'Generando Tareas', 'Verificando y creando tareas para los expedientes importados...');
         
+        // 1. Verificar tareas existentes para evitar duplicados
+        const siniestros = expedientes.map(e => e.num_siniestro).filter(n => n);
+        
+        if (siniestros.length > 0) {
+            const { data: tareasExistentes, error: checkError } = await supabaseClient
+                .from('tareas')
+                .select('num_siniestro')
+                .in('num_siniestro', siniestros);
+
+            if (checkError) throw checkError;
+
+            const siniestrosConTarea = new Set(tareasExistentes.map(t => t.num_siniestro));
+            // Filtrar expedientes que ya tienen tarea
+            expedientes = expedientes.filter(exp => !siniestrosConTarea.has(exp.num_siniestro));
+        }
+
+        if (expedientes.length === 0) {
+            showToast('info', 'Tareas Actualizadas', 'Todos los expedientes importados ya tienen tareas asignadas.');
+            return;
+        }
+
         let responsables = [];
         if (distribuirEquitativamente) {
             // Intentar obtener usuarios activos
@@ -2608,14 +2754,14 @@ async function distribuirTareasImportadas(expedientes, distribuirEquitativamente
         }
 
         // Fallback a datos locales si no hay usuarios en DB o error
-        if (responsibles.length === 0 && typeof responsiblesData !== 'undefined') {
-            responsibles = responsiblesData.filter(r => r.status === 'available' || r.status === 'active');
+        if (responsables.length === 0 && typeof responsiblesData !== 'undefined') {
+            responsables = responsiblesData.filter(r => r.status === 'available' || r.status === 'active');
         }
 
         const tareas = expedientes.map((exp, index) => {
             let responsable = '';
-            if (responsibles.length > 0) {
-                const user = responsibles[index % responsibles.length];
+            if (responsables.length > 0) {
+                const user = responsables[index % responsables.length];
                 responsable = user.full_name || user.name || user.email;
             }
 
@@ -2643,6 +2789,93 @@ async function distribuirTareasImportadas(expedientes, distribuirEquitativamente
     }
 }
 
+// ============================================================================
+// GESTIÓN DE REGISTRO DE IMPORTACIONES (LOGS)
+// ============================================================================
+
+async function saveImportLog(logData) {
+    try {
+        const { error } = await supabaseClient
+            .from('import_logs')
+            .insert([{
+                file_name: logData.fileName,
+                total_records: logData.totalRecords,
+                duplicates_count: logData.duplicates,
+                status: logData.status,
+                created_at: new Date().toISOString()
+            }]);
+            
+        if (error) {
+            console.warn('No se pudo guardar el log en DB (¿Tabla import_logs existe?), usando UI local.', error);
+        }
+    } catch (e) {
+        console.error('Error saving import log:', e);
+    }
+}
+
+async function loadImportLogs() {
+    const tableBody = document.getElementById('importLogTable');
+    if (!tableBody) return;
+
+    try {
+        const { data: logs, error } = await supabaseClient
+            .from('import_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error) throw error;
+
+        tableBody.innerHTML = '';
+        if (!logs || logs.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay registros de importación recientes.</td></tr>';
+            return;
+        }
+
+        logs.forEach(log => {
+            const row = document.createElement('tr');
+            const date = new Date(log.created_at).toLocaleString();
+            
+            // Determinar si hay incidencias para habilitar el botón de detalles
+            const hasIssues = (log.duplicates_count > 0) || (log.status === 'Error');
+            
+            row.innerHTML = `
+                <td>${date}</td>
+                <td>${log.file_name || '-'}</td>
+                <td>${log.total_records || 0}</td>
+                <td><span class="status-badge status-${log.status === 'Completado' ? 'completado' : 'pendiente'}">${log.status}</span></td>
+                <td>${log.duplicates_count || 0}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="downloadImportFile('${log.id}', '${log.file_name}')" title="Descargar Archivo Original">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" onclick="viewImportErrors('${log.id}')" title="Ver Detalles/Errores" ${hasIssues ? '' : 'disabled'}>
+                            <i class="bi bi-exclamation-circle"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+    } catch (error) {
+        console.warn('Error loading import logs (Tabla import_logs podría no existir):', error);
+        // No mostramos error al usuario para no ensuciar la UI si la tabla no existe aún
+    }
+}
+
+function downloadImportFile(id, fileName) {
+    // Nota: Para que esto funcione realmente, se debe implementar la subida del archivo a Supabase Storage al importar
+    console.log(`Solicitando descarga de archivo: ${fileName} (Log ID: ${id})`);
+    showToast('info', 'Descarga no disponible', 'El archivo original no está almacenado. Se requiere configurar Supabase Storage.');
+}
+
+function viewImportErrors(id) {
+    // Nota: Esto requeriría guardar un JSON de errores en la tabla import_logs
+    console.log(`Solicitando detalles de errores para Log ID: ${id}`);
+    showToast('info', 'Detalles', 'Visualización de detalles de error en desarrollo.');
+}
+
         // ============================================================================
 // FUNCIONES AUXILIARES PARA IMPORTACIÓN DE EXPEDIENTES - FASE 2a
 // ============================================================================
@@ -2662,7 +2895,7 @@ async function verificarYEliminarDuplicados(expedientes) {
         // Consultar en Supabase qué números de siniestro ya existen
         const { data: existentes, error } = await supabaseClient
             .from('expedientes')
-            .select('num_siniestro')
+            .select('num_siniestro, estado, num_poliza')
             .in('num_siniestro', numerosSiniestro);
         
         if (error) throw error;
@@ -2672,24 +2905,64 @@ async function verificarYEliminarDuplicados(expedientes) {
         if (numerosPoliza.length > 0) {
             const { data: pols } = await supabaseClient
                 .from('expedientes')
-                .select('num_poliza')
+                .select('num_poliza, num_siniestro, estado')
                 .in('num_poliza', numerosPoliza);
             existentesPolizas = pols || [];
         }
         
-        // Crear un Set con los números de siniestro que ya existen
-        const siniestrosExistentes = new Set(existentes.map(exp => exp.num_siniestro));
-        const polizasExistentes = new Set(existentesPolizas.map(exp => exp.num_poliza));
+        // Consultar si existen TAREAS activas para estos siniestros
+        // Esto evita marcar como duplicado un expediente que existe pero no tiene tarea (huérfano)
+        const todosSiniestrosExistentes = [
+            ...existentes.map(e => e.num_siniestro),
+            ...existentesPolizas.map(e => e.num_siniestro)
+        ].filter(n => n);
+
+        let tareasActivasSet = new Set();
+        if (todosSiniestrosExistentes.length > 0) {
+            const { data: tareas } = await supabaseClient
+                .from('tareas')
+                .select('num_siniestro')
+                .in('num_siniestro', todosSiniestrosExistentes);
+            
+            if (tareas) {
+                tareas.forEach(t => tareasActivasSet.add(t.num_siniestro));
+            }
+        }
+
+        // Mapas para búsqueda rápida de expedientes existentes
+        const mapSiniestros = new Map(existentes.map(e => [e.num_siniestro, e]));
+        const mapPolizas = new Map(existentesPolizas.map(e => [e.num_poliza, e]));
         
         // Separar expedientes nuevos de duplicados
         const nuevos = [];
         const duplicados = [];
         
         expedientes.forEach(exp => {
-            const isDupSiniestro = exp.num_siniestro && siniestrosExistentes.has(exp.num_siniestro);
-            const isDupPoliza = exp.num_poliza && polizasExistentes.has(exp.num_poliza);
+            // Buscar coincidencia en DB
+            let match = null;
+            if (exp.num_siniestro && mapSiniestros.has(exp.num_siniestro)) {
+                match = mapSiniestros.get(exp.num_siniestro);
+            } else if (exp.num_poliza && mapPolizas.has(exp.num_poliza)) {
+                match = mapPolizas.get(exp.num_poliza);
+            }
 
-            if (isDupSiniestro || isDupPoliza) {
+            // Lógica de Duplicado:
+            // Es duplicado SI existe en expedientes Y (está Archivado O tiene Tarea activa)
+            // Si existe en expedientes pero NO está archivado NI tiene tarea, es un "falso positivo" (carga fallida previa) -> Procesar como Nuevo (Update)
+            
+            let esDuplicadoReal = false;
+            
+            if (match) {
+                const estaArchivado = match.estado === 'Archivado';
+                const tieneTarea = tareasActivasSet.has(match.num_siniestro);
+                
+                if (estaArchivado || tieneTarea) {
+                    esDuplicadoReal = true;
+                }
+                // Si no está archivado y no tiene tarea, asumimos que es un reintento de carga -> No es duplicado
+            }
+
+            if (esDuplicadoReal) {
                 duplicados.push(exp);
             } else {
                 nuevos.push(exp);
@@ -3129,16 +3402,67 @@ async function deleteUserSecurity(userId) {
     }
 }
 
+// ============================================================================
+// SUPABASE REALTIME - NOTIFICACIONES
+// ============================================================================
+
+function setupRealtimeSubscription() {
+    if (!currentUser || realtimeSubscription) return;
+
+    console.log('Configurando suscripción Realtime para:', currentUser.name);
+
+    realtimeSubscription = supabaseClient
+        .channel('public:tareas')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas' }, payload => {
+            handleRealtimeEvent(payload);
+        })
+        .subscribe((status) => {
+            console.log('Estado suscripción Realtime:', status);
+        });
+}
+
+function handleRealtimeEvent(payload) {
+    if (!currentUser) return;
+    
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    
+    // Verificar si la tarea me afecta (coincidencia por nombre o email)
+    const myName = currentUser.name;
+    const myEmail = currentUser.email;
+    
+    const isAssignedToMe = (record) => record && (record.responsable === myName || record.responsable === myEmail);
+    
+    if (eventType === 'INSERT') {
+        if (isAssignedToMe(newRecord)) {
+            showToast('info', '🔔 Nueva Tarea', `Se te ha asignado: ${newRecord.descripcion || 'Sin descripción'}`);
+            refreshViews();
+        }
+    } else if (eventType === 'UPDATE') {
+        const assignedNow = isAssignedToMe(newRecord);
+        const assignedBefore = isAssignedToMe(oldRecord);
+        
+        if (assignedNow && !assignedBefore) {
+            showToast('info', '🔔 Tarea Reasignada', `Se te ha transferido: ${newRecord.descripcion || 'Sin descripción'}`);
+            refreshViews();
+        } else if (assignedNow) {
+            // Actualización en mi tarea (ej. cambio de estado por otro usuario)
+            refreshViews();
+        }
+    }
+}
+
+function refreshViews() {
+    loadDashboardStats();
+    if (document.getElementById('tasks').classList.contains('active')) loadTasks();
+    if (document.getElementById('workload').classList.contains('active')) loadWorkloadStats();
+}
+
 // Initialize function to load app after login
 async function initializeApp() {
     console.log('Initializing app...');
     try {
-        // Load initial data
-        // loadSecurityTable();
-        // enforceSecurityUIRestrictions();
-
-        // Add other initialization calls here
-
+        // Iniciar escucha de eventos en tiempo real
+        setupRealtimeSubscription();
     } catch (error) {
         console.error('Error initializing app:', error);
     }

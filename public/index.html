@@ -462,7 +462,7 @@
                                     <th>Registros</th>
                                     <th>Estado</th>
                                     <th>Duplicados</th>
-                                    <th>Errores</th>
+                                    <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="importLogTable">
@@ -656,6 +656,9 @@
                         </button>
                         <button class="btn-custom btn-outline-custom" onclick="distributeWorkload()">
                             <i class="bi bi-arrow-repeat"></i> Distribuir Carga Equitativamente
+                        </button>
+                        <button class="btn-custom btn-outline-warning" onclick="openReassignTasksModal()">
+                            <i class="bi bi-arrow-left-right"></i> Reasignar Tareas
                         </button>
                     </div>
 
@@ -1439,6 +1442,39 @@
             <div class="modal-footer">
                 <button class="btn-custom btn-outline-custom" onclick="closeModal('responsibleModal')">Cancelar</button>
                 <button class="btn-custom btn-primary-custom" onclick="saveResponsible()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Reasignación Masiva de Tareas -->
+    <div id="reassignTasksModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reasignación Masiva de Tareas</h5>
+                <button class="modal-close" onclick="closeModal('reassignTasksModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Transfiere todas las tareas pendientes de un usuario (ej. inactivo) a otro.
+                </div>
+                <form id="reassignForm" onsubmit="event.preventDefault(); executeReassignment();">
+                    <div class="mb-3">
+                        <label for="reassignFromUser" class="form-label">Desde (Usuario Origen)</label>
+                        <select class="form-select" id="reassignFromUser" required>
+                            <option value="">Seleccionar...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reassignToUser" class="form-label">Hacia (Usuario Destino)</label>
+                        <select class="form-select" id="reassignToUser" required>
+                            <option value="">Seleccionar...</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('reassignTasksModal')">Cancelar</button>
+                <button class="btn-custom btn-primary-custom" onclick="executeReassignment()">Reasignar Tareas</button>
             </div>
         </div>
     </div>
