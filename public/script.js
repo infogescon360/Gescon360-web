@@ -273,6 +273,13 @@ async function checkAuthStatus() {
             
             // 2. Mostrar Dashboard Solo Tras Validación
             document.body.classList.add('authenticated');
+            
+            // Mostrar elementos del dashboard explícitamente
+            const sidebar = document.querySelector('.sidebar');
+            const mainContent = document.querySelector('.main-content');
+            if (sidebar) sidebar.style.display = 'block';
+            if (mainContent) mainContent.style.display = 'block';
+            
             initInactivityTimer();
             showApp();
             await initializeApp();
@@ -443,8 +450,18 @@ function showAuth() {
 
 // Show app container
 function showApp() {
-  const appContainer = document.getElementById('appContainer');
-  appContainer.classList.remove('d-none');
+    const appContainer = document.getElementById('appContainer');
+    if (appContainer) {
+        appContainer.classList.remove('d-none');
+        appContainer.style.display = 'block';
+        appContainer.style.opacity = '1';
+        appContainer.style.visibility = 'visible';
+    }
+    const authContainer = document.getElementById('authContainer');
+    if (authContainer) {
+        authContainer.style.display = 'none';
+        authContainer.classList.add('d-none');
+    }
 }
 
 // Login function
@@ -490,6 +507,9 @@ async function login() {
         loginButton.disabled = false;
 
         if (data.user) {
+            // Guardar sesión
+            if (data.session) localStorage.setItem('supabase.auth.token', data.session.access_token);
+
             // Verificar admin tras login
             const token = data.session.access_token;
             let isAdmin = false;
@@ -513,6 +533,13 @@ async function login() {
             };
             
             document.body.classList.add('authenticated');
+            
+            // Mostrar dashboard explícitamente
+            const sidebar = document.querySelector('.sidebar');
+            const mainContent = document.querySelector('.main-content');
+            if (sidebar) sidebar.style.display = 'block';
+            if (mainContent) mainContent.style.display = 'block';
+            
             initInactivityTimer();
             showApp();
             initializeApp();
