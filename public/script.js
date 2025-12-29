@@ -1335,7 +1335,7 @@ async function processAllDuplicates() {
         }
 
         // Eliminar todos de la tabla duplicados
-        await supabaseClient.from('duplicados').delete().neq('id', 0); // Hack para borrar todo
+        await supabaseClient.from('duplicados').delete().not('id', 'is', null);
 
         showToast('success', 'Procesado', `${duplicates.length} duplicados han sido procesados y fusionados.`);
         loadDuplicates();
@@ -1355,7 +1355,7 @@ async function deleteAllDuplicates() {
         const { error } = await supabaseClient
             .from('duplicados')
             .delete()
-            .neq('id', 0);
+            .not('id', 'is', null);
 
         if (error) throw error;
 
@@ -2226,7 +2226,7 @@ async function searchArchive() {
             query = query.or(`num_siniestro.ilike.%${term}%,num_poliza.ilike.%${term}%,num_sgr.ilike.%${term}%,nombre_asegurado.ilike.%${term}%`);
         }
 
-        const { data, error } = await query.order('created_at', { ascending: false });
+        const { data, error } = await query.order('fecha_ocurrencia', { ascending: false });
 
         if (error) throw error;
         renderArchiveTable(data);
@@ -2253,7 +2253,7 @@ function renderArchiveTable(data) {
         const row = document.createElement('tr');
         const importe = exp.importe ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(exp.importe) : '€0,00';
         // Usar created_at como fecha de archivo aproximada si no hay campo específico
-        const dateStr = exp.created_at || new Date().toISOString(); 
+        const dateStr = exp.fecha_ocurrencia || new Date().toISOString(); 
         
         row.innerHTML = `
             <td>${exp.num_siniestro || '-'}</td>
