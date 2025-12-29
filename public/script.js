@@ -84,6 +84,10 @@ let activeTaskFilters = {};
 let monthlyChartInstance = null;
 let statusChartInstance = null;
 
+// Variables de paginación
+let currentArchivePage = 1;
+const ITEMS_PER_ARCHIVE_PAGE = 50;
+
 // 3. Timeout de 20 Minutos por Inactividad
 let inactivityTimer;
 const INACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 minutos en milisegundos
@@ -1324,18 +1328,31 @@ async function processAllDuplicates() {
         }
 
         // Procesar cada duplicado (Upsert en expedientes)
+        const processedExpedients = [];
         for (const dup of duplicates) {
-            const { id, fecha_deteccion, veces_repetido, ...expedientData } = dup;
+            // Excluir created_at para evitar error de columna no existente
+            const { id, fecha_deteccion, veces_repetido, created_at, ...expedientData } = dup;
+            
             // Upsert basado en num_siniestro
             const { error: upsertError } = await supabaseClient
                 .from('expedientes')
                 .upsert(expedientData, { onConflict: 'num_siniestro' });
                 
-            if (upsertError) console.error(`Error procesando duplicado ${dup.num_siniestro}:`, upsertError);
+            if (upsertError) {
+                console.error(`Error procesando duplicado ${dup.num_siniestro}:`, upsertError);
+            } else {
+                processedExpedients.push(expedientData);
+            }
         }
 
         // Eliminar todos de la tabla duplicados
         await supabaseClient.from('duplicados').delete().not('id', 'is', null);
+
+        // Generar tareas para los duplicados procesados (como si fueran importados)
+        if (processedExpedients.length > 0) {
+             const distribuirEquitativamente = document.getElementById('autoDistributeImport')?.checked ?? true;
+             await distribuirTareasImportadas(processedExpedients, distribuirEquitativamente);
+        }
 
         showToast('success', 'Procesado', `${duplicates.length} duplicados han sido procesados y fusionados.`);
         loadDuplicates();
@@ -1383,7 +1400,8 @@ async function processDuplicate(id) {
             
         if (fetchError) throw fetchError;
         
-        const { id: dupId, fecha_deteccion, veces_repetido, ...expedientData } = dup;
+        // Excluir created_at
+        const { id: dupId, fecha_deteccion, veces_repetido, created_at, ...expedientData } = dup;
         
         // Actualizar expediente
         const { error: upsertError } = await supabaseClient
@@ -1391,6 +1409,10 @@ async function processDuplicate(id) {
             .upsert(expedientData, { onConflict: 'num_siniestro' });
             
         if (upsertError) throw upsertError;
+        
+        // Generar tarea para el duplicado procesado
+        const distribuirEquitativamente = document.getElementById('autoDistributeImport')?.checked ?? true;
+        await distribuirTareasImportadas([expedientData], distribuirEquitativamente);
         
         // Borrar de duplicados
         await supabaseClient.from('duplicados').delete().eq('id', id);
@@ -2183,24 +2205,29 @@ async function exportReport() {
     }
 }
 
-async function loadArchivedExpedients() {
-    console.log('Cargando archivados...');
+async function loadArchivedExpedients(page = 1) {
+    console.log(`Cargando archivados (página ${page})...`);
     const tableBody = document.getElementById('archiveTableBody');
     if (!tableBody) return;
 
+    currentArchivePage = page;
     showLoading();
     try {
-        // Cargar últimos 50 archivados
-        const { data: archives, error } = await supabaseClient
+        const from = (page - 1) * ITEMS_PER_ARCHIVE_PAGE;
+        const to = from + ITEMS_PER_ARCHIVE_PAGE - 1;
+
+        // Cargar archivados con paginación
+        const { data: archives, count, error } = await supabaseClient
             .from('expedientes')
-            .select('*')
+            .select('*', { count: 'exact' })
             .eq('estado', 'Archivado')
             .order('fecha_ocurrencia', { ascending: false })
-            .limit(50);
+            .range(from, to);
 
         if (error) throw error;
 
         renderArchiveTable(archives);
+        renderArchivePagination(count);
     } catch (error) {
         console.error('Error loading archives:', error);
         tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Error al cargar archivados: ' + error.message + '</td></tr>';
@@ -2209,11 +2236,59 @@ async function loadArchivedExpedients() {
     }
 }
 
+function renderArchivePagination(totalItems) {
+    const tableContainer = document.querySelector('#archive .custom-table');
+    let paginationContainer = document.getElementById('archivePagination');
+    
+    if (!paginationContainer) {
+        paginationContainer = document.createElement('div');
+        paginationContainer.id = 'archivePagination';
+        paginationContainer.className = 'd-flex justify-content-between align-items-center p-3 border-top';
+        // Insertar después del contenedor de la tabla
+        const tableDiv = tableContainer.querySelector('.table-container');
+        if (tableDiv) {
+            tableDiv.parentNode.insertBefore(paginationContainer, tableDiv.nextSibling);
+        } else {
+            tableContainer.appendChild(paginationContainer);
+        }
+    }
+    
+    const totalPages = Math.ceil(totalItems / ITEMS_PER_ARCHIVE_PAGE);
+    const startItem = totalItems === 0 ? 0 : (currentArchivePage - 1) * ITEMS_PER_ARCHIVE_PAGE + 1;
+    const endItem = Math.min(currentArchivePage * ITEMS_PER_ARCHIVE_PAGE, totalItems);
+    
+    paginationContainer.innerHTML = `
+        <div class="text-muted small">
+            Mostrando ${startItem}-${endItem} de ${totalItems} expedientes
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" 
+                onclick="loadArchivedExpedients(${currentArchivePage - 1})" 
+                ${currentArchivePage <= 1 ? 'disabled' : ''}>
+                <i class="bi bi-chevron-left"></i> Anterior
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" disabled>
+                Página ${currentArchivePage} de ${totalPages || 1}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" 
+                onclick="loadArchivedExpedients(${currentArchivePage + 1})" 
+                ${currentArchivePage >= totalPages ? 'disabled' : ''}>
+                Siguiente <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
 async function searchArchive() {
     console.log('Buscando en archivo...');
     const searchInput = document.getElementById('archiveSearchInput');
     const term = searchInput ? searchInput.value.trim() : '';
     
+    if (!term) {
+        loadArchivedExpedients(1);
+        return;
+    }
+
     showLoading();
     try {
         let query = supabaseClient
@@ -2226,10 +2301,14 @@ async function searchArchive() {
             query = query.or(`num_siniestro.ilike.%${term}%,num_poliza.ilike.%${term}%,num_sgr.ilike.%${term}%,nombre_asegurado.ilike.%${term}%`);
         }
 
-        const { data, error } = await query.order('fecha_ocurrencia', { ascending: false });
+        const { data, error } = await query.order('fecha_ocurrencia', { ascending: false }).limit(50);
 
         if (error) throw error;
         renderArchiveTable(data);
+        
+        // Ocultar paginación durante búsqueda
+        const paginationContainer = document.getElementById('archivePagination');
+        if (paginationContainer) paginationContainer.innerHTML = '';
         
     } catch (error) {
         console.error('Error searching archive:', error);
@@ -2299,7 +2378,7 @@ async function restoreExpedient(id) {
         if (searchInput && searchInput.value.trim()) {
             searchArchive();
         } else {
-            loadArchivedExpedients();
+            loadArchivedExpedients(currentArchivePage);
         }
     } catch (error) {
         console.error(error);
@@ -2535,9 +2614,10 @@ async function distribuirTareasImportadas(expedientes, distribuirEquitativamente
 async function verificarYEliminarDuplicados(expedientes) {
     try {
         // Obtener todos los números de siniestro del archivo
-        const numerosSiniestro = expedientes.map(exp => exp.num_siniestro).filter(num => num && num.trim() !== '');
+        const numerosSiniestro = expedientes.map(exp => exp.num_siniestro).filter(n => n);
+        const numerosPoliza = expedientes.map(exp => exp.num_poliza).filter(n => n);
         
-        if (numerosSiniestro.length === 0) {
+        if (numerosSiniestro.length === 0 && numerosPoliza.length === 0) {
             return { nuevos: expedientes, duplicados: [] };
         }
         
@@ -2548,21 +2628,48 @@ async function verificarYEliminarDuplicados(expedientes) {
             .in('num_siniestro', numerosSiniestro);
         
         if (error) throw error;
+
+        // Consultar pólizas existentes (si hay coincidencias)
+        let existentesPolizas = [];
+        if (numerosPoliza.length > 0) {
+            const { data: pols } = await supabaseClient
+                .from('expedientes')
+                .select('num_poliza')
+                .in('num_poliza', numerosPoliza);
+            existentesPolizas = pols || [];
+        }
         
         // Crear un Set con los números de siniestro que ya existen
         const siniestrosExistentes = new Set(existentes.map(exp => exp.num_siniestro));
+        const polizasExistentes = new Set(existentesPolizas.map(exp => exp.num_poliza));
         
         // Separar expedientes nuevos de duplicados
         const nuevos = [];
         const duplicados = [];
         
         expedientes.forEach(exp => {
-            if (exp.num_siniestro && siniestrosExistentes.has(exp.num_siniestro)) {
+            const isDupSiniestro = exp.num_siniestro && siniestrosExistentes.has(exp.num_siniestro);
+            const isDupPoliza = exp.num_poliza && polizasExistentes.has(exp.num_poliza);
+
+            if (isDupSiniestro || isDupPoliza) {
                 duplicados.push(exp);
             } else {
                 nuevos.push(exp);
             }
         });
+
+        // Enviar notificación al admin si hay duplicados
+        if (duplicados.length > 0) {
+            const adminEmail = 'jesus.mp@gescon360.es';
+            const subject = `⚠️ Detectados ${duplicados.length} duplicados en importación`;
+            const html = `<p>Se han detectado <strong>${duplicados.length}</strong> expedientes que coinciden con registros existentes (por Nº Siniestro o Póliza).</p>
+                          <p>Se han movido a la bandeja de Duplicados para su revisión manual.</p>`;
+            
+            // No esperamos la respuesta para no bloquear la UI
+            supabaseClient.functions.invoke('send-email', {
+                body: { to: adminEmail, subject, html }
+            }).catch(err => console.error('Error enviando aviso duplicados:', err));
+        }
         
         return { nuevos, duplicados };
     } catch (error) {
