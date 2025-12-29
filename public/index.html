@@ -70,6 +70,20 @@
         display: block !important;
         margin-left: 250px;
       }
+
+      /* ESTILOS DE GESTIÓN DE TAREAS (REQ. USUARIO) */
+      .task-row-pdte-revision { background-color: #fff3cd !important; } /* Amarillo - Cálido */
+      .task-row-iniciada { background-color: #cff4fc !important; } /* Azul claro */
+      .task-row-finalizado { background-color: #d1e7dd !important; } /* Verde */
+      .task-row-finalizado-parcial { background-color: #d1e7dd !important; } /* Verde */
+      .task-row-rehusado { background-color: #f8d7da !important; } /* Rojo */
+      .task-row-datos-no-validos { background-color: #e2d9f3 !important; } /* Morado claro */
+      
+      /* Celdas específicas */
+      .cell-date-today { background-color: #dc3545 !important; color: white !important; font-weight: bold; border-radius: 4px; padding: 2px 5px; }
+      .cell-recobrado-purple { color: #6f42c1 !important; font-weight: bold; }
+      .task-row-finalizado-parcial .cell-recobrado { background-color: #6f42c1 !important; color: white !important; border-radius: 4px; }
+      
     </style>
 
     <!-- Supabase Client Library -->
@@ -1265,6 +1279,7 @@
                                 <option value="Pendiente">Pendiente</option>
                                 <option value="En Proceso">En Proceso</option>
                                 <option value="Completada">Completada</option>
+                                <option value="Pdte. revisión">Pdte. revisión</option>
                                 <option value="Datos NO válidos">Datos NO válidos</option>
                                 <option value="Rehusado NO cobertura">Rehusado NO cobertura</option>
                                 <option value="Recobrado">Recobrado</option>

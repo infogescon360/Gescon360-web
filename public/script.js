@@ -273,6 +273,9 @@ async function checkAuthStatus() {
             
             // 2. Mostrar Dashboard Solo Tras Validación
             document.body.classList.add('authenticated');
+
+            // Ejecutar automatizaciones diarias (Emails, Archivado)
+            runDailyAutomations();
             
             // Mostrar elementos del dashboard explícitamente
             const sidebar = document.querySelector('.sidebar');
@@ -1101,9 +1104,40 @@ async function loadTasks() {
         if (!tasks || tasks.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="10" class="text-center p-4">No hay tareas registradas.</td></tr>';
         } else {
+            const todayStr = new Date().toISOString().split('T')[0];
+
             tasks.forEach(task => {
                 const row = document.createElement('tr');
-                // Lógica simple para renderizar fila (se puede expandir)
+                
+                // --- LÓGICA DE ESTILOS Y ESTADOS ---
+                let rowClass = '';
+                let dateClass = '';
+                let recobradoClass = 'cell-recobrado';
+                
+                const estado = task.estado || '';
+                const fechaLimite = task.fecha_limite ? task.fecha_limite.split('T')[0] : '';
+                
+                // 1. Colores por Estado
+                if (estado === 'Pdte. revisión') rowClass = 'task-row-pdte-revision';
+                else if (estado === 'Iniciada' || estado === 'En Proceso') rowClass = 'task-row-iniciada';
+                else if (estado === 'Completada' || estado === 'Finalizado') rowClass = 'task-row-finalizado';
+                else if (estado === 'Finalizado Parcial') rowClass = 'task-row-finalizado-parcial';
+                else if (estado === 'Rehusado' || estado === 'Rehusado NO cobertura') rowClass = 'task-row-rehusado';
+                else if (estado === 'Datos NO válidos') rowClass = 'task-row-datos-no-validos';
+
+                // 2. Lógica de Fecha (Si coincide con HOY -> Rojo)
+                if (fechaLimite === todayStr) {
+                    dateClass = 'cell-date-today';
+                    // Si es Iniciada/En Proceso y vence hoy, la celda se pone roja (la fila ya es azul)
+                }
+
+                // 3. Lógica Finalizado Parcial (Importe Recobrado en Morado)
+                // Nota: Asumimos que 'importe_recobrado' podría venir en el objeto task o expediente relacionado
+                // Por ahora usamos un placeholder o dato si existe
+                const importeRecobrado = task.importe_recobrado ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(task.importe_recobrado) : '-';
+
+                row.className = rowClass;
+
                 row.innerHTML = `
                     <td><input type="checkbox" value="${task.id}"></td>
                     <td>${task.num_siniestro || '-'}</td>
@@ -1112,8 +1146,8 @@ async function loadTasks() {
                     <td>${task.responsable || '-'}</td>
                     <td><span class="status-badge status-${getStatusClass(task.estado)}">${task.estado}</span></td>
                     <td><span class="priority-indicator priority-${task.prioridad.toLowerCase()}">${task.prioridad}</span></td>
-                    <td>${formatDate(task.fecha_limite)}</td>
-                    <td>-</td>
+                    <td><span class="${dateClass}">${formatDate(task.fecha_limite)}</span></td>
+                    <td class="${recobradoClass}">${importeRecobrado}</td>
                     <td>
                         <button class="btn btn-sm btn-outline-primary" onclick="editTask('${task.id}')"><i class="bi bi-pencil"></i></button>
                     </td>
@@ -1150,6 +1184,7 @@ async function editTask(id) {
         document.getElementById('taskPriority').value = task.prioridad || 'Media';
         document.getElementById('taskDueDate').value = task.fecha_limite || '';
         document.getElementById('taskStatus').value = task.estado || 'Pendiente';
+        // Nota: Si el estado es "Pdte. revisión", asegurarse de que esté en el select (añadido en HTML)
         
         // Actualizar contador
         document.getElementById('char-count').textContent = (task.descripcion || '').length;
@@ -2072,7 +2107,7 @@ async function exportReport() {
         // 1. Obtener datos de expedientes
         const { data: expedientes, error } = await supabaseClient
             .from('expedientes')
-            .select('fecha_ocurrencia, importe, estado, created_at');
+            .select('fecha_ocurrencia, importe, estado');
 
         if (error) throw error;
 
@@ -2160,7 +2195,7 @@ async function loadArchivedExpedients() {
             .from('expedientes')
             .select('*')
             .eq('estado', 'Archivado')
-            .order('created_at', { ascending: false }) // Usar created_at o updated_at si existe
+            .order('fecha_ocurrencia', { ascending: false })
             .limit(50);
 
         if (error) throw error;
@@ -2379,10 +2414,10 @@ async function importarExpedientes() {
         }
 
         // Obtener opciones de importación
-        const verificarDuplicados = document.getElementById('verificarDuplicados')?.checked ?? true;
-        const normalizarCampos = document.getElementById('normalizarCampos')?.checked ?? true;
-        const distribuirTareas = document.getElementById('distribuirTareas')?.checked ?? true;
-        const distribuirEquitativamente = document.getElementById('distribuirEquitativamente')?.checked ?? true;
+        const verificarDuplicados = document.getElementById('validateDuplicates')?.checked ?? true;
+        const normalizarCampos = document.getElementById('normalizeFields')?.checked ?? true;
+        const distribuirTareas = document.getElementById('autoTransfer')?.checked ?? true;
+        const distribuirEquitativamente = document.getElementById('autoDistributeImport')?.checked ?? true;
         
         showToast('info', 'Procesando', `Se encontraron ${data.length} expedientes. Procesando...`);
         
@@ -2423,6 +2458,13 @@ async function importarExpedientes() {
         
         const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar);
         hideLoading();
+
+        // PASO 4: Distribuir Tareas si está activado
+        // REACTIVADO para cumplir con la lógica de "Pdte. revisión" y asignación equitativa específica
+        if (distribuirTareas && resultado.expedientes && resultado.expedientes.length > 0) {
+           await distribuirTareasImportadas(resultado.expedientes, distribuirEquitativamente);
+        }
+
         showToast('success', 'Importación Completada', 
             `Se importaron ${resultado.insertados} expedientes correctamente.`);
         
@@ -2436,6 +2478,53 @@ async function importarExpedientes() {
     }
 }
 
+// Función auxiliar para distribuir tareas tras importación
+async function distribuirTareasImportadas(expedientes, distribuirEquitativamente) {
+    try {
+        showToast('info', 'Generando Tareas', 'Creando tareas para los expedientes importados...');
+        
+        let responsables = [];
+        if (distribuirEquitativamente) {
+            // Intentar obtener usuarios activos
+            const { data: users } = await supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('status', 'active');
+            responsables = users || [];
+        }
+
+        // Fallback a datos locales si no hay usuarios en DB o error
+        if (responsibles.length === 0 && typeof responsiblesData !== 'undefined') {
+            responsibles = responsiblesData.filter(r => r.status === 'available' || r.status === 'active');
+        }
+
+        const tareas = expedientes.map((exp, index) => {
+            let responsable = '';
+            if (responsibles.length > 0) {
+                const user = responsibles[index % responsibles.length];
+                responsable = user.full_name || user.name || user.email;
+            }
+
+            return {
+                num_siniestro: exp.num_siniestro,
+                responsable: responsable,
+                descripcion: `Gestión inicial del expediente ${exp.num_siniestro} (Importado)`,
+                prioridad: 'Media',
+                fecha_limite: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +7 días
+                estado: 'Pdte. revisión' // Estado inicial requerido
+            };
+        });
+
+        const { error } = await supabaseClient.from('tareas').insert(tareas);
+        if (error) throw error;
+        
+        showToast('success', 'Tareas Generadas', `Se han creado ${tareas.length} tareas automáticamente.`);
+    } catch (error) {
+        console.error('Error distribuyendo tareas:', error);
+        // No bloqueamos el flujo principal, solo avisamos
+        showToast('warning', 'Aviso Tareas', 'Expedientes importados, pero error al crear tareas: ' + (error.message || 'Tabla tareas no existe'));
+    }
+}
 
         // ============================================================================
 // FUNCIONES AUXILIARES PARA IMPORTACIÓN DE EXPEDIENTES - FASE 2a
@@ -2598,7 +2687,7 @@ function normalizarExpediente(row) {
         nombre_causante: cleanString(row['Causante'] || row['nombre_causante']),
         direccion_causante: cleanString(row['Dirección Causante'] || row['direccion_causante']),
         cia_causante: cleanString(row['Cía Causante'] || row['cia_causante']),
-        estado: 'Pdte. revisión', // Estado inicial por defecto
+        estado: 'Pdte. revisión', // Estado inicial por defecto para el expediente también
         fecha_inicio: new Date().toISOString().split('T')[0]
     };
 }
@@ -3104,6 +3193,152 @@ async function loadReports() {
     }
 }
 
+// ============================================================================
+// AUTOMATIZACIÓN DIARIA (TRIGGERS INTERNOS)
+// ============================================================================
+
+async function runDailyAutomations() {
+    const today = new Date().toISOString().split('T')[0];
+    const lastRun = localStorage.getItem('gescon360_lastDailyRun');
+
+    if (lastRun !== today) {
+        console.log('Ejecutando automatizaciones diarias...');
+        
+        try {
+            // 1. Enviar Resumen de Tareas por Gestor
+            await enviarResumenTareasPorGestor();
+            
+            // 2. Archivar Finalizados
+            await archivarFinalizados();
+            
+            // Marcar como ejecutado hoy
+            localStorage.setItem('gescon360_lastDailyRun', today);
+            showToast('info', 'Automatización', 'Tareas diarias ejecutadas correctamente.');
+            
+        } catch (error) {
+            console.error('Error en automatización diaria:', error);
+        }
+    } else {
+        console.log('Automatizaciones diarias ya ejecutadas hoy.');
+    }
+}
+
+async function enviarResumenTareasPorGestor() {
+    console.log('Iniciando envío de resumen de tareas...');
+    
+    try {
+        // 1. Obtener tareas pendientes
+        const { data: tasks, error } = await supabaseClient
+            .from('tareas')
+            .select('*')
+            .neq('estado', 'Completada')
+            .neq('estado', 'Recobrado')
+            .neq('estado', 'Archivado')
+            .order('fecha_limite', { ascending: true });
+            
+        if (error) throw error;
+        
+        if (!tasks || tasks.length === 0) {
+            console.log('No hay tareas pendientes para notificar.');
+            return;
+        }
+
+        // 2. Agrupar por responsable
+        const tasksByResponsible = {};
+        tasks.forEach(task => {
+            const resp = task.responsable;
+            if (!resp) return;
+            if (!tasksByResponsible[resp]) tasksByResponsible[resp] = [];
+            tasksByResponsible[resp].push(task);
+        });
+
+        // 3. Enviar correos (Iterar responsables)
+        let emailsSent = 0;
+        
+        for (const [responsable, userTasks] of Object.entries(tasksByResponsible)) {
+            // Intentar resolver email si 'responsable' es un nombre
+            let email = responsable;
+            
+            // Si no parece un email, buscar en datos locales
+            if (!email.includes('@')) {
+                const respObj = responsiblesData.find(r => r.name === responsable);
+                if (respObj) email = respObj.email;
+                else if (typeof usersData !== 'undefined') {
+                    const userObj = usersData.find(u => u.full_name === responsable);
+                    if (userObj) email = userObj.email;
+                }
+            }
+
+            if (email && email.includes('@')) {
+                // Limitar a 150 tareas (req usuario)
+                const tasksToSend = userTasks.slice(0, 150);
+                
+                // Generar HTML del correo
+                const listItems = tasksToSend.map(t => {
+                    const fecha = t.fecha_limite ? new Date(t.fecha_limite).toLocaleDateString() : 'Sin fecha';
+                    return `<li><strong>${t.num_siniestro || 'S/N'}</strong>: ${t.descripcion} <span style="color:#d9534f;">(Vence: ${fecha})</span></li>`;
+                }).join('');
+
+                const htmlBody = `
+                    <div style="font-family: Arial, sans-serif; color: #333;">
+                        <h2 style="color: #2c3e50;">Resumen Diario de Tareas - Gescon360</h2>
+                        <p>Hola ${responsable},</p>
+                        <p>Tienes <strong>${userTasks.length}</strong> tareas pendientes. Aquí tienes las más urgentes:</p>
+                        <ul>${listItems}</ul>
+                        <p>Por favor, accede a la plataforma para gestionarlas.</p>
+                        <hr>
+                        <small style="color: #7f8c8d;">Este es un mensaje automático del sistema Gescon360.</small>
+                    </div>
+                `;
+
+                // Llamar a Edge Function
+                const { error: funcError } = await supabaseClient.functions.invoke('send-email', {
+                    body: { to: email, subject: `📝 Tus Tareas Pendientes - ${new Date().toLocaleDateString()}`, html: htmlBody }
+                });
+
+                if (funcError) console.error(`Error enviando a ${email}:`, funcError);
+                else emailsSent++;
+            }
+        }
+
+        if (emailsSent > 0) showToast('success', 'Notificaciones enviadas', `Se enviaron ${emailsSent} correos de resumen.`);
+
+    } catch (error) {
+        console.error('Error en proceso de envío de correos:', error);
+        showToast('danger', 'Error', 'Fallo al enviar resúmenes: ' + error.message);
+    }
+}
+
+async function archivarFinalizados() {
+    console.log('Archivando tareas finalizadas...');
+    
+    // Buscar tareas finalizadas o finalizadas parciales
+    const { data: finishedTasks, error } = await supabaseClient
+        .from('tareas')
+        .select('*')
+        .or('estado.eq.Completada,estado.eq.Finalizado,estado.eq.Finalizado Parcial');
+        
+    if (error) {
+        console.error('Error buscando tareas para archivar:', error);
+        return;
+    }
+
+    if (finishedTasks && finishedTasks.length > 0) {
+        // En este sistema, "Archivar" podría significar mover a una tabla histórica o cambiar estado a 'Archivado'
+        // Vamos a cambiar el estado a 'Archivado' para que desaparezcan de la vista principal
+        const ids = finishedTasks.map(t => t.id);
+        
+        const { error: updateError } = await supabaseClient
+            .from('tareas')
+            .update({ estado: 'Archivado' })
+            .in('id', ids);
+            
+        if (!updateError) {
+            console.log(`${ids.length} tareas movidas a archivo.`);
+        }
+    }
+}
+
 async function renderMonthlyChart() {
     const canvas = document.getElementById('monthlyChart');
     if (!canvas) return;
@@ -3112,7 +3347,7 @@ async function renderMonthlyChart() {
     // Obtener datos de expedientes
     const { data: expedientes, error } = await supabaseClient
         .from('expedientes')
-        .select('fecha_ocurrencia, created_at');
+        .select('fecha_ocurrencia');
 
     if (error) throw error;
 
