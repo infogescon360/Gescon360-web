@@ -3,7 +3,7 @@
 <head>
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+        script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.sheetjs.com;
         style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com;
         font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com https://r2cdn.perplexity.ai;
         connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net;
@@ -12,6 +12,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GESCON 360 - Sistema Integral de Gestión de Expedientes</title>
+    <link rel="icon" href="data:,">
 
     <!-- Enlaces a recursos externos (CDN) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -19,7 +20,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         
     <!-- SheetJS para parseo de CSV/Excel -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <!-- Chart.js para gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- ENLACE A TU ARCHIVO CSS -->
     <link rel="stylesheet" href="style.css">
@@ -677,11 +681,7 @@
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label for="notificationEmails" class="form-label">Emails para Notificaciones</label>
-                                <textarea class="form-control" id="notificationEmails" rows="4" placeholder="juan.perez@empresa.com&#10;maria.lopez@empresa.com&#10;carlos.rodriguez@empresa.com&#10;ana[...]
-maria.lopez@empresa.com
-carlos.rodriguez@empresa.com
-ana.martinez@empresa.com
-jmpenalvo@gmail.com"></textarea>
+                                <textarea class="form-control" id="notificationEmails" rows="4" placeholder="juan.perez@empresa.com&#10;maria.lopez@empresa.com&#10;carlos.rodriguez@empresa.com"></textarea>
                             </div>
                         </div>
                     </div>
@@ -817,7 +817,7 @@ jmpenalvo@gmail.com"></textarea>
                                     <th>Estado</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="limitsTableBody">
                                 <tr>
                                     <td>Archivos de Importación</td>
                                     <td>10 MB</td>
@@ -928,9 +928,10 @@ jmpenalvo@gmail.com"></textarea>
                     <div class="table-header">
                         <h5 class="table-title">Expedientes Archivados</h5>
                         <div class="table-actions">
-                            <button class="btn-custom btn-outline-custom" onclick="searchArchive()">
-                                <i class="bi bi-search"></i> Buscar
-                            </button>
+                            <div class="input-group input-group-sm" style="width: 300px;">
+                                <input type="text" class="form-control" id="archiveSearchInput" placeholder="Buscar por Nº, Cliente o SGR..." onkeyup="if(event.key === 'Enter') searchArchive()">
+                                <button class="btn btn-outline-secondary" type="button" onclick="searchArchive()"><i class="bi bi-search"></i></button>
+                            </div>
                         </div>
                     </div>
                     <div class="table-container">
@@ -946,23 +947,8 @@ jmpenalvo@gmail.com"></textarea>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td>EXP-2023-856</td>
-                                    <td>SGR-001237</td>
-                                    <td>expedientes_2023.csv</td>
-                                    <td><span class="date-cell" onclick="openDatePicker(this, 'ARCH-EXP-2023-856')"><i class="bi bi-calendar-event"></i>30/11/2024</span></td>
-                                    <td>Completado satisfactoriamente</td>
-                                    <td>€45,680.00</td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline-primary" onclick="viewArchived('EXP-2023-856')">
-                                            <i class="bi bi-eye"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-warning" onclick="restoreExpedient('EXP-2023-856')">
-                                            <i class="bi bi-arrow-counterclockwise"></i>
-                                        </button>
-                                    </td>
-                                </tr>
+                            <tbody id="archiveTableBody">
+                                <!-- Los expedientes archivados se cargarán aquí -->
                             </tbody>
                         </table>
                     </div>
@@ -1055,6 +1041,385 @@ jmpenalvo@gmail.com"></textarea>
             <!-- Nota: he actualizado etiquetas <label> a 'for' cuando había inputs con id y he convertido
                  títulos de grupo en <div class="form-label"> para evitar warnings de accesibilidad. -->
         </main>
+    </div>
+
+    <!-- Modal de Detalle de Expediente -->
+    <div id="expedientModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detalle del Expediente</h5>
+                <button class="modal-close" onclick="closeModal('expedientModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Información General</h6>
+                        <p class="mb-1"><strong>Nº Expediente:</strong> <span id="viewNumExpediente"></span></p>
+                        <p class="mb-1"><strong>Nº Póliza:</strong> <span id="viewNumPoliza"></span></p>
+                        <p class="mb-1"><strong>Nº SGR:</strong> <span id="viewNumSGR"></span></p>
+                        <p class="mb-1"><strong>Estado:</strong> <span id="viewEstado"></span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Datos Económicos y Fechas</h6>
+                        <p class="mb-1"><strong>Importe:</strong> <span id="viewImporte"></span></p>
+                        <p class="mb-1"><strong>Fecha Ocurrencia:</strong> <span id="viewFecha"></span></p>
+                    </div>
+                </div>
+                <hr>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Asegurado</h6>
+                        <p class="mb-1"><strong>Nombre:</strong> <span id="viewAsegurado"></span></p>
+                        <p class="mb-1"><strong>DNI:</strong> <span id="viewDNI"></span></p>
+                        <p class="mb-1"><strong>Dirección:</strong> <span id="viewDireccion"></span></p>
+                        <p class="mb-1"><strong>CP:</strong> <span id="viewCP"></span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Siniestro</h6>
+                        <p class="mb-1"><strong>Tipo Daño:</strong> <span id="viewTipoDano"></span></p>
+                        <p class="mb-1"><strong>Causante:</strong> <span id="viewCausante"></span></p>
+                        <p class="mb-1"><strong>Cía. Causante:</strong> <span id="viewCiaCausante"></span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('expedientModal')">Cerrar</button>
+                <button class="btn-custom btn-primary-custom" id="btnEditExpedient">
+                    <i class="bi bi-pencil"></i> Editar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Edición de Expediente -->
+    <div id="editExpedientModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Editar Expediente</h5>
+                <button class="modal-close" onclick="closeModal('editExpedientModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editExpedientForm" onsubmit="event.preventDefault(); saveExpedientChanges();">
+                    <input type="hidden" id="editExpedientId">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="editNumSiniestro" class="form-label">Nº Siniestro</label>
+                            <input type="text" class="form-control" id="editNumSiniestro" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editNumPoliza" class="form-label">Nº Póliza</label>
+                            <input type="text" class="form-control" id="editNumPoliza">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editNumSGR" class="form-label">Nº SGR</label>
+                            <input type="text" class="form-control" id="editNumSGR">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="editEstado" class="form-label">Estado</label>
+                            <select class="form-select" id="editEstado">
+                                <option value="Pendiente">Pendiente</option>
+                                <option value="En Proceso">En Proceso</option>
+                                <option value="Pdte. revisión">Pdte. revisión</option>
+                                <option value="Completado">Completado</option>
+                                <option value="Archivado">Archivado</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editImporte" class="form-label">Importe (€)</label>
+                            <input type="number" step="0.01" class="form-control" id="editImporte">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="editAsegurado" class="form-label">Asegurado</label>
+                            <input type="text" class="form-control" id="editAsegurado">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="editDNI" class="form-label">DNI</label>
+                            <input type="text" class="form-control" id="editDNI">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('editExpedientModal')">Cancelar</button>
+                <button class="btn-custom btn-primary-custom" onclick="saveExpedientChanges()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Búsqueda Avanzada -->
+    <div id="advancedSearchModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Búsqueda Avanzada</h5>
+                <button class="modal-close" onclick="closeModal('advancedSearchModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="advancedSearchForm" onsubmit="event.preventDefault(); performAdvancedSearch();">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Rango de Fechas (Ocurrencia)</label>
+                            <div class="input-group">
+                                <input type="date" class="form-control" id="advDateStart">
+                                <span class="input-group-text">a</span>
+                                <input type="date" class="form-control" id="advDateEnd">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Rango de Importe (€)</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="advAmountMin" placeholder="Min">
+                                <span class="input-group-text">-</span>
+                                <input type="number" class="form-control" id="advAmountMax" placeholder="Max">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="advStatus" class="form-label">Estado</label>
+                            <select class="form-select" id="advStatus">
+                                <option value="">Todos</option>
+                                <option value="Pendiente">Pendiente</option>
+                                <option value="En Proceso">En Proceso</option>
+                                <option value="Pdte. revisión">Pdte. revisión</option>
+                                <option value="Completado">Completado</option>
+                                <option value="Archivado">Archivado</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="advAsegurado" class="form-label">Asegurado / Cliente</label>
+                            <input type="text" class="form-control" id="advAsegurado" placeholder="Nombre parcial">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                         <div class="col-md-6">
+                            <label for="advCiaCausante" class="form-label">Cía. Causante</label>
+                            <input type="text" class="form-control" id="advCiaCausante" placeholder="Nombre compañía">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="advTipoDano" class="form-label">Tipo de Daño</label>
+                            <input type="text" class="form-control" id="advTipoDano" placeholder="Ej: Agua, Incendio...">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('advancedSearchModal')">Cancelar</button>
+                <button class="btn-custom btn-primary-custom" onclick="performAdvancedSearch()">Buscar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Nueva/Editar Tarea -->
+    <div id="taskModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Gestión de Tarea</h5>
+                <button class="modal-close" onclick="closeModal('taskModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="taskForm" onsubmit="event.preventDefault(); saveTask();">
+                    <input type="hidden" id="taskId">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="taskExpedient" class="form-label">Nº Expediente / Siniestro</label>
+                            <input type="text" class="form-control" id="taskExpedient" required placeholder="Ej: EXP-2024-001">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="taskResponsible" class="form-label">Responsable</label>
+                            <select class="form-select" id="taskResponsible">
+                                <option value="">Seleccionar...</option>
+                                <!-- Se llenará dinámicamente -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="taskDescription" class="form-label">Descripción</label>
+                        <textarea class="form-control" id="taskDescription" rows="3" required></textarea>
+                        <div class="char-counter"><span id="char-count">0</span> caracteres</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="taskPriority" class="form-label">Prioridad</label>
+                            <select class="form-select" id="taskPriority">
+                                <option value="Baja">Baja</option>
+                                <option value="Media" selected>Media</option>
+                                <option value="Alta">Alta</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="taskDueDate" class="form-label">Fecha Límite</label>
+                            <input type="date" class="form-control" id="taskDueDate" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="taskStatus" class="form-label">Estado</label>
+                            <select class="form-select" id="taskStatus">
+                                <option value="Pendiente">Pendiente</option>
+                                <option value="En Proceso">En Proceso</option>
+                                <option value="Completada">Completada</option>
+                                <option value="Datos NO válidos">Datos NO válidos</option>
+                                <option value="Rehusado NO cobertura">Rehusado NO cobertura</option>
+                                <option value="Recobrado">Recobrado</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Opción de archivado condicional -->
+                    <div id="archive-option" style="display:none;" class="alert-custom alert-warning p-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="archive-checkbox">
+                            <label class="form-check-label" for="archive-checkbox">
+                                <strong>Archivar expediente</strong> al guardar esta tarea
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('taskModal')">Cancelar</button>
+                <button class="btn-custom btn-primary-custom" onclick="saveTask()">Guardar Tarea</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Usuario -->
+    <div id="userModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Gestión de Usuario</h5>
+                <button class="modal-close" onclick="closeModal('userModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="userForm" onsubmit="event.preventDefault(); saveUser();">
+                    <input type="hidden" id="userId">
+                    <div class="mb-3">
+                        <label for="userEmail" class="form-label">Correo Electrónico</label>
+                        <input type="email" class="form-control" id="userEmail" required placeholder="usuario@gescon360.es">
+                    </div>
+                    <div class="mb-3">
+                        <label for="userFullName" class="form-label">Nombre Completo</label>
+                        <input type="text" class="form-control" id="userFullName" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="userRole" class="form-label">Rol</label>
+                            <select class="form-select" id="userRole">
+                                <option value="user">Usuario</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="userStatus" class="form-label">Estado</label>
+                            <select class="form-select" id="userStatus">
+                                <option value="active">Activo</option>
+                                <option value="inactive">Inactivo</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="alert-custom alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <span>Al crear un usuario, se generará una contraseña temporal que deberá ser comunicada al usuario.</span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('userModal')">Cancelar</button>
+                <button class="btn-custom btn-primary-custom" onclick="saveUser()">Guardar Usuario</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Filtrar Tareas -->
+    <div id="filterTasksModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h5 class="modal-title">Filtrar Tareas</h5>
+                <button class="modal-close" onclick="closeModal('filterTasksModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="filterTasksForm" onsubmit="event.preventDefault(); applyTaskFilters();">
+                    <div class="mb-3">
+                        <label for="filterTaskResponsible" class="form-label">Responsable</label>
+                        <select class="form-select" id="filterTaskResponsible">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="filterTaskStatus" class="form-label">Estado</label>
+                        <select class="form-select" id="filterTaskStatus">
+                            <option value="">Todos</option>
+                            <option value="Pendiente">Pendiente</option>
+                            <option value="En Proceso">En Proceso</option>
+                            <option value="Completada">Completada</option>
+                            <option value="Datos NO válidos">Datos NO válidos</option>
+                            <option value="Rehusado NO cobertura">Rehusado NO cobertura</option>
+                            <option value="Recobrado">Recobrado</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="filterTaskPriority" class="form-label">Prioridad</label>
+                        <select class="form-select" id="filterTaskPriority">
+                            <option value="">Todas</option>
+                            <option value="Alta">Alta</option>
+                            <option value="Media">Media</option>
+                            <option value="Baja">Baja</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="clearTaskFilters()">Limpiar Filtros</button>
+                <button class="btn-custom btn-primary-custom" onclick="applyTaskFilters()">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Responsable -->
+    <div id="responsibleModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Gestión de Responsable</h5>
+                <button class="modal-close" onclick="closeModal('responsibleModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="responsibleForm" onsubmit="event.preventDefault(); saveResponsible();">
+                    <input type="hidden" id="respId">
+                    <div class="mb-3">
+                        <label for="respEmail" class="form-label">Correo Electrónico</label>
+                        <input type="email" class="form-control" id="respEmail" required placeholder="nombre@empresa.com">
+                    </div>
+                    <div class="mb-3">
+                        <label for="respName" class="form-label">Nombre Completo</label>
+                        <input type="text" class="form-control" id="respName" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="respStatus" class="form-label">Estado Operativo</label>
+                            <select class="form-select" id="respStatus">
+                                <option value="active">Disponible</option>
+                                <option value="vacation">Vacaciones</option>
+                                <option value="sick">Baja Médica</option>
+                                <option value="inactive">Inactivo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="respRole" class="form-label">Rol</label>
+                            <select class="form-select" id="respRole">
+                                <option value="user">Usuario</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-custom btn-outline-custom" onclick="closeModal('responsibleModal')">Cancelar</button>
+                <button class="btn-custom btn-primary-custom" onclick="saveResponsible()">Guardar</button>
+            </div>
+        </div>
     </div>
 
  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
