@@ -10,6 +10,16 @@
  * =============================================================================
  */
 
+// 1. Ocultar Dashboard Hasta Autenticación Exitosa
+function hideAllContent() {
+    const sidebar = document.querySelector('.sidebar');
+    const mainContent = document.querySelector('.main-content');
+    if (sidebar) sidebar.style.display = 'none';
+    if (mainContent) mainContent.style.display = 'none';
+}
+// Llamar inmediatamente al cargar
+hideAllContent();
+
 // Configuración de Supabase - Se cargarán desde el servidor
 let supabaseClient = null;
 
@@ -73,6 +83,36 @@ let usersData = [];
 let activeTaskFilters = {};
 let monthlyChartInstance = null;
 let statusChartInstance = null;
+
+// 3. Timeout de 20 Minutos por Inactividad
+let inactivityTimer;
+const INACTIVITY_TIMEOUT = 20 * 60 * 1000; // 20 minutos en milisegundos
+
+function resetInactivityTimer() {
+    clearTimeout(inactivityTimer);
+    // Solo reiniciar si el usuario está autenticado
+    if (document.body.classList.contains('authenticated')) {
+        inactivityTimer = setTimeout(logoutDueToInactivity, INACTIVITY_TIMEOUT);
+    }
+}
+
+function initInactivityTimer() {
+    // Eventos que resetean el timer
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    
+    events.forEach(event => {
+        document.addEventListener(event, resetInactivityTimer, true);
+    });
+    
+    // Iniciar el timer
+    resetInactivityTimer();
+}
+
+async function logoutDueToInactivity() {
+    console.log('Sesión cerrada por inactividad');
+    await logout();
+    alert('Sesión cerrada por inactividad');
+}
 
 // System Limits
 let systemLimits = {
@@ -230,6 +270,10 @@ async function checkAuthStatus() {
                 id: session.user.id,
                 isAdmin: isAdmin
             };
+            
+            // 2. Mostrar Dashboard Solo Tras Validación
+            document.body.classList.add('authenticated');
+            initInactivityTimer();
             showApp();
             await initializeApp();
                         
@@ -379,8 +423,7 @@ function showAuth() {
     // Forzar ocultación del app y mostrar auth
     if (authContainer) {
         authContainer.classList.remove('d-none');
-        authContainer.style.display = 'block';
-        authContainer.style.visibility = 'visible';
+        authContainer.style.display = ''; // Dejar que CSS controle el display (flex)
         authContainer.style.opacity = '1';
     }
     
@@ -468,6 +511,9 @@ async function login() {
                 id: data.user.id,
                 isAdmin: isAdmin
             };
+            
+            document.body.classList.add('authenticated');
+            initInactivityTimer();
             showApp();
             initializeApp();
             hideCreateAdminButton(); // Hide admin button after login
@@ -491,12 +537,26 @@ async function logout() {
 
         if (error) throw error;
 
+        // Limpiar estado de autenticación y timers
+        document.body.classList.remove('authenticated');
+        clearTimeout(inactivityTimer);
+        const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+        events.forEach(event => {
+            document.removeEventListener(event, resetInactivityTimer, true);
+        });
+
         currentUser = null;
         showAuth();
         showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
     } catch (error) {
         console.error('Logout error:', error);
         // Even if there's an error, clear the local session
+        document.body.classList.remove('authenticated');
+        clearTimeout(inactivityTimer);
+        const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+        events.forEach(event => {
+            document.removeEventListener(event, resetInactivityTimer, true);
+        });
         currentUser = null;
         showAuth();
         showToast('info', 'Sesión cerrada', 'Has cerrado sesión correctamente');
