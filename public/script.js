@@ -1072,6 +1072,25 @@ async function saveTask() {
 
         if (error) throw error;
 
+        // LÓGICA DE ARCHIVADO AUTOMÁTICO (REQ: Finalizados van a Archivados)
+        const finalStates = ['Completada', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos', 'Recobrado'];
+        if (finalStates.includes(taskData.estado)) {
+            // Actualizar expediente a Archivado
+            if (taskData.num_siniestro) {
+                await supabaseClient
+                    .from('expedientes')
+                    .update({ estado: 'Archivado' })
+                    .eq('num_siniestro', taskData.num_siniestro);
+            }
+            // Actualizar tarea a Archivado (para que desaparezca de la lista activa)
+            if (id) {
+                await supabaseClient
+                    .from('tareas')
+                    .update({ estado: 'Archivado' })
+                    .eq('id', id);
+            }
+        }
+
         showToast('success', 'Éxito', 'Tarea guardada correctamente');
         closeModal('taskModal');
         loadTasks(); // Recargar lista
@@ -1094,6 +1113,14 @@ async function loadTasks() {
         let query = supabaseClient
             .from('tareas')
             .select('*');
+
+        // FILTRO POR ROL (REQ: Usuario solo ve sus tareas, Admin ve todo)
+        if (currentUser && !currentUser.isAdmin) {
+            // Filtramos por responsable coincidiendo con nombre o email
+            // Nota: Se asume que 'responsable' en tareas coincide con currentUser.name o currentUser.email
+            const userIdentifier = currentUser.name; // O currentUser.email, según cómo se guarden
+            query = query.or(`responsable.eq.${currentUser.name},responsable.eq.${currentUser.email}`);
+        }
 
         // Aplicar filtros activos
         if (activeTaskFilters.responsable) query = query.eq('responsable', activeTaskFilters.responsable);
@@ -1190,6 +1217,14 @@ async function editTask(id) {
         document.getElementById('taskStatus').value = task.estado || 'Pendiente';
         // Nota: Si el estado es "Pdte. revisión", asegurarse de que esté en el select (añadido en HTML)
         
+        // Lógica de transición de estado: Si está en "Pdte. revisión" y se edita, sugerir "Iniciada"
+        // (Solo si no se cambia a un estado final)
+        const finalStates = ['Completada', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos', 'Recobrado', 'Archivado'];
+        if (task.estado === 'Pdte. revisión' && !finalStates.includes(document.getElementById('taskStatus').value)) {
+             // Opcional: cambiar automáticamente o dejar que el usuario lo haga. 
+             // El requerimiento dice "hasta que se cambie manualmente... pasará a Iniciada".
+        }
+
         // Actualizar contador
         document.getElementById('char-count').textContent = (task.descripcion || '').length;
         
@@ -2484,7 +2519,7 @@ async function importarExpedientes() {
     try {
         // PASO 1: Parsear archivo con SheetJS
         showToast('info', 'Parseando', 'Leyendo archivo...');
-        const data = await parsearArchivoImportacion(file);
+        const data = await parsearArchivoImportacion(file, file.name);
         
         if (!data || data.length === 0) {
             showToast('warning', 'Archivo vacío', 'El archivo no contiene datos válidos.');
@@ -2586,10 +2621,13 @@ async function distribuirTareasImportadas(expedientes, distribuirEquitativamente
 
             return {
                 num_siniestro: exp.num_siniestro,
+                referencia_gescon: exp.referencia_gescon, // Pasar referencia
                 responsable: responsable,
                 descripcion: `Gestión inicial del expediente ${exp.num_siniestro} (Importado)`,
-                prioridad: 'Media',
-                fecha_limite: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +7 días
+                // REQ: Prioridad Alta si importe > 1500 o fecha limite es hoy.
+                // REQ: Fecha límite inicial es HOY (día de carga).
+                prioridad: (exp.importe > 1500) ? 'Alta' : 'Media', 
+                fecha_limite: new Date().toISOString().split('T')[0], // REQ: Mismo día de carga
                 estado: 'Pdte. revisión' // Estado inicial requerido
             };
         });
@@ -2680,7 +2718,7 @@ async function verificarYEliminarDuplicados(expedientes) {
 }
 
 // Función auxiliar para parsear archivo CSV/Excel con SheetJS
-async function parsearArchivoImportacion(file) {
+async function parsearArchivoImportacion(file, fileName) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
 
@@ -2697,7 +2735,7 @@ async function parsearArchivoImportacion(file) {
                 
                 // Normalizar y mapear campos
                 const expedientesNormalizados = jsonData
-                    .map(row => normalizarExpediente(row))
+                    .map((row, index) => normalizarExpediente(row, fileName, index))
                     .filter(item => item !== null); // Filtrar registros inválidos
                 
                 resolve(expedientesNormalizados);
@@ -2715,7 +2753,7 @@ async function parsearArchivoImportacion(file) {
 }
 
 // Función para normalizar un expediente
-function normalizarExpediente(row) {
+function normalizarExpediente(row, fileName, index) {
     // Helper para limpiar cadenas
     const cleanString = (val) => {
         if (val === null || val === undefined) return '';
@@ -2781,10 +2819,14 @@ function normalizarExpediente(row) {
         return null;
     }
 
+    // REQ: Referencia Gescon = NombreFichero + Número
+    const referenciaGescon = `${fileName}_${index + 1}`;
+
     return {
         num_siniestro: numSiniestro,
+        referencia_gescon: referenciaGescon,
         num_poliza: cleanString(row['Nº Póliza'] || row['num_poliza'] || row['NUM_POLIZA']),
-        num_sgr: cleanString(row['Nº SGR'] || row['num_sgr'] || row['NUM_SGR']),
+        num_sgr: cleanString(row['Nº SGR'] || row['num_sgr'] || row['NUM_SGR']), // REQ: Puede venir vacío para rellenar manual
         nombre_asegurado: cleanString(row['Asegurado'] || row['nombre_asegurado'] || row['NOMBRE']),
         direccion_asegurado: cleanString(row['Dirección'] || row['direccion'] || row['DIRECCION']),
         cp: cleanString(row['CP'] || row['codigo_postal']),
