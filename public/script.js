@@ -87,6 +87,8 @@ let statusChartInstance = null;
 // Variables de paginación
 let currentArchivePage = 1;
 const ITEMS_PER_ARCHIVE_PAGE = 50;
+let currentTaskPage = 1;
+const TASKS_PER_PAGE = 15;
 
 // Variable global para la suscripción Realtime
 let realtimeSubscription = null;
@@ -1131,34 +1133,42 @@ async function loadTasks() {
     if (!tableBody) return;
 
     showLoading();
+    
     try {
         let query = supabaseClient
             .from('tareas')
-            .select('*');
-
-        // FILTRO POR ROL (REQ: Usuario solo ve sus tareas, Admin ve todo)
+            .select(`
+                *,
+                expedientes!inner(referencia_gescon, num_sgr)
+            `, { count: 'exact' });
+        
+        // FILTRO POR ROL (Usuario solo ve sus tareas, Admin ve todo)
         if (currentUser && !currentUser.isAdmin) {
-            // Filtramos por responsable coincidiendo con nombre o email
-            // Nota: Se asume que 'responsable' en tareas coincide con currentUser.name o currentUser.email
-            const userIdentifier = currentUser.name; // O currentUser.email, según cómo se guarden
+            const userIdentifier = currentUser.name;
             query = query.or(`responsable.eq.${currentUser.name},responsable.eq.${currentUser.email}`);
         }
-
+        
         // Aplicar filtros activos
         if (activeTaskFilters.responsable) query = query.eq('responsable', activeTaskFilters.responsable);
         if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
         if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
-
-        const { data: tasks, error } = await query.order('fecha_limite', { ascending: true });
-
+        
+        const from = (currentTaskPage - 1) * TASKS_PER_PAGE;
+        const to = from + TASKS_PER_PAGE - 1;
+        
+        const { data: tasks, count, error } = await query
+            .order('fecha_limite', { ascending: true })
+            .range(from, to);
+        
         if (error) throw error;
-
+        
         tableBody.innerHTML = '';
+        
         if (!tasks || tasks.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="10" class="text-center p-4">No hay tareas registradas.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="11" class="text-center p-4">No hay tareas registradas.</td></tr>';
         } else {
             const todayStr = new Date().toISOString().split('T')[0];
-
+            
             tasks.forEach(task => {
                 const row = document.createElement('tr');
                 
@@ -1177,26 +1187,36 @@ async function loadTasks() {
                 else if (estado === 'Finalizado Parcial') rowClass = 'task-row-finalizado-parcial';
                 else if (estado === 'Rehusado' || estado === 'Rehusado NO cobertura') rowClass = 'task-row-rehusado';
                 else if (estado === 'Datos NO válidos') rowClass = 'task-row-datos-no-validos';
-
+                
                 // 2. Lógica de Fecha (Si coincide con HOY -> Rojo)
                 if (fechaLimite === todayStr) {
                     dateClass = 'cell-date-today';
-                    // Si es Iniciada/En Proceso y vence hoy, la celda se pone roja (la fila ya es azul)
                 }
-
-                // 3. Lógica Finalizado Parcial (Importe Recobrado en Morado)
-                // Nota: Asumimos que 'importe_recobrado' podría venir en el objeto task o expediente relacionado
-                // Por ahora usamos un placeholder o dato si existe
-                const importeRecobrado = task.importe_recobrado ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(task.importe_recobrado) : '-';
-
+                
+                // 3. Obtener referencia_gescon desde el JOIN
+                const referenciaGescon = task.expedientes?.referencia_gescon || '-';
+                const numSGR = task.expedientes?.num_sgr || '';
+                
+                // 4. Extraer solo el NOMBRE del responsable (sin @email)
+                let responsableNombre = task.responsable || '-';
+                if (responsableNombre.includes('@')) {
+                    // Si es email, extraer la parte antes de @
+                    responsableNombre = responsableNombre.split('@')[0];
+                }
+                
+                // 5. Importe recobrado
+                const importeRecobrado = task.importe_recobrado 
+                    ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(task.importe_recobrado) 
+                    : '-';
+                
                 row.className = rowClass;
-
                 row.innerHTML = `
                     <td><input type="checkbox" value="${task.id}"></td>
                     <td>${task.num_siniestro || '-'}</td>
-                    <td>-</td>
-                    <td>${task.descripcion}</td>
-                    <td>${task.responsable || '-'}</td>
+                    <td>${referenciaGescon}</td>
+                    <td>${numSGR}</td>
+                    <td contenteditable="true" data-field="descripcion" data-id="${task.id}">${task.descripcion || ''}</td>
+                    <td>${responsableNombre}</td>
                     <td><span class="status-badge status-${getStatusClass(task.estado)}">${task.estado}</span></td>
                     <td><span class="priority-indicator priority-${task.prioridad.toLowerCase()}">${task.prioridad}</span></td>
                     <td><span class="${dateClass}">${formatDate(task.fecha_limite)}</span></td>
@@ -1207,12 +1227,13 @@ async function loadTasks() {
                 `;
                 tableBody.appendChild(row);
             });
+            
+            // PAGINACIÓN: Implementar tras cargar
+            renderTaskPagination(count || 0);
         }
     } catch (error) {
         console.error('Error loading tasks:', error);
-        // showToast('danger', 'Error', 'Error al cargar tareas: ' + error.message);
-        // Fallback visual si la tabla no existe aún
-        tableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No se pudieron cargar las tareas (¿Tabla "tareas" existe?)</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No se pudieron cargar las tareas</td></tr>';
     } finally {
         hideLoading();
     }
@@ -4022,3 +4043,45 @@ async function resetBaseDeDatos() {
 // Exponer funciones globalmente
 window.limpiarExpedientesHuerfanos = limpiarExpedientesHuerfanos;
 window.resetBaseDeDatos = resetBaseDeDatos;
+
+// ============================================================================
+// PAGINACIÓN DE TAREAS
+// ============================================================================
+
+function renderTaskPagination(totalTasks) {
+    const tableContainer = document.querySelector('#tasks .custom-table');
+    let paginationContainer = document.getElementById('taskPagination');
+    
+    if (!paginationContainer) {
+        paginationContainer = document.createElement('div');
+        paginationContainer.id = 'taskPagination';
+        paginationContainer.className = 'd-flex justify-content-between align-items-center p-3 border-top';
+        tableContainer.appendChild(paginationContainer);
+    }
+    
+    const totalPages = Math.ceil(totalTasks / TASKS_PER_PAGE);
+    const startItem = totalTasks === 0 ? 0 : (currentTaskPage - 1) * TASKS_PER_PAGE + 1;
+    const endItem = Math.min(currentTaskPage * TASKS_PER_PAGE, totalTasks);
+    
+    paginationContainer.innerHTML = `
+        <div class="text-muted small">
+            Mostrando ${startItem}-${endItem} de ${totalTasks} tareas
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage - 1})" ${currentTaskPage <= 1 ? 'disabled' : ''}>
+                <i class="bi bi-chevron-left"></i> Anterior
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" disabled>
+                Página ${currentTaskPage} de ${totalPages || 1}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage + 1})" ${currentTaskPage >= totalPages ? 'disabled' : ''}>
+                Siguiente <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+function loadTasksPage(page) {
+    currentTaskPage = page;
+    loadTasks();
+}
