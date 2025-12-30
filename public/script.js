@@ -2747,7 +2747,7 @@ async function distribuirTareasImportadas(expedientes, distribuirEquitativamente
         if (siniestros.length > 0) {
             const { data: tareasExistentes, error: checkError } = await supabaseClient
                 .from('tareas')
-                .select('num_siniestro')
+                .select('num_siniestro') // FIX: Verificar por num_siniestro para evitar duplicados fantasma
                 .in('num_siniestro', siniestros);
 
             if (checkError) throw checkError;
@@ -2931,6 +2931,7 @@ async function verificarYEliminarDuplicados(expedientes) {
         
         // Consultar si existen TAREAS activas para estos siniestros
         // Esto evita marcar como duplicado un expediente que existe pero no tiene tarea (huérfano)
+        // FIX: Usar num_siniestro como clave de enlace (evita problemas con IDs internos)
         const todosSiniestrosExistentes = [
             ...existentes.map(e => e.num_siniestro),
             ...existentesPolizas.map(e => e.num_siniestro)
@@ -2940,7 +2941,7 @@ async function verificarYEliminarDuplicados(expedientes) {
         if (todosSiniestrosExistentes.length > 0) {
             const { data: tareas } = await supabaseClient
                 .from('tareas')
-                .select('num_siniestro')
+                .select('num_siniestro') // FIX: Join lógico por num_siniestro
                 .in('num_siniestro', todosSiniestrosExistentes);
             
             if (tareas) {
@@ -3925,3 +3926,99 @@ async function renderStatusChart() {
         }
     });
 }
+
+// ============================================================================
+// UTILIDADES DE MANTENIMIENTO Y LIMPIEZA
+// ============================================================================
+
+/**
+ * Detecta y elimina expedientes que no tienen una tarea asociada.
+ * Útil para limpiar tras importaciones fallidas.
+ */
+async function limpiarExpedientesHuerfanos() {
+    console.log('🔍 Buscando expedientes huérfanos (sin tarea asociada)...');
+    showLoading();
+
+    try {
+        // 1. Obtener todos los siniestros que tienen registro en la tabla tareas
+        const { data: tareas, error: errTareas } = await supabaseClient
+            .from('tareas')
+            .select('num_siniestro');
+            
+        if (errTareas) throw errTareas;
+        
+        // Crear Set de siniestros con tarea para búsqueda rápida
+        const siniestrosConTarea = new Set(tareas.map(t => t.num_siniestro).filter(n => n));
+        
+        // 2. Obtener todos los expedientes
+        const { data: expedientes, error: errExp } = await supabaseClient
+            .from('expedientes')
+            .select('id, num_siniestro, estado');
+            
+        if (errExp) throw errExp;
+        
+        // 3. Identificar huérfanos: Existen en expedientes pero NO en tareas
+        const huerfanos = expedientes.filter(e => !siniestrosConTarea.has(e.num_siniestro));
+        
+        console.log(`📊 Total expedientes: ${expedientes.length}`);
+        console.log(`📊 Total tareas: ${tareas.length}`);
+        console.log(`⚠️ Huérfanos encontrados: ${huerfanos.length}`);
+        
+        if (huerfanos.length === 0) {
+            alert('✅ No se encontraron expedientes huérfanos. La base de datos es consistente.');
+            return;
+        }
+        
+        const confirmMsg = `Se encontraron ${huerfanos.length} expedientes HUÉRFANOS (sin tarea).\n\n` +
+                           `Esto suele ocurrir por importaciones fallidas.\n` +
+                           `¿Deseas eliminarlos para limpiar la base de datos?`;
+                           
+        if (!confirm(confirmMsg)) return;
+        
+        // 4. Eliminar
+        const ids = huerfanos.map(e => e.id);
+        const { error: errDel } = await supabaseClient
+            .from('expedientes')
+            .delete()
+            .in('id', ids);
+            
+        if (errDel) throw errDel;
+
+        alert(`✅ Limpieza completada. Se eliminaron ${ids.length} expedientes huérfanos.`);
+        window.location.reload();
+
+    } catch (e) {
+        console.error('Error en limpieza:', e);
+        alert('Error: ' + e.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * BORRADO TOTAL: Elimina todos los datos para empezar de cero.
+ */
+async function resetBaseDeDatos() {
+    if (!confirm('PELIGRO: ¿Estás seguro de que quieres BORRAR TODOS los expedientes, tareas y duplicados?\n\nEsta acción no se puede deshacer.')) return;
+    if (!confirm('Confirmación final: Se borrarán TODOS los datos para empezar de cero.')) return;
+    
+    showLoading();
+    try {
+        await supabaseClient.from('tareas').delete().neq('id', 0); // Borrar todas las tareas
+        await supabaseClient.from('duplicados').delete().neq('id', 0); // Borrar duplicados
+        // Borrar expedientes (usando filtro neq id null/uuid-zero para seleccionar todos)
+        await supabaseClient.from('expedientes').delete().neq('num_siniestro', 'dummy_value_impossible'); 
+        
+        alert('Base de datos reseteada correctamente.');
+        window.location.reload();
+    } catch (e) {
+        console.error(e);
+        alert('Error al resetear: ' + e.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// Exponer funciones globalmente
+window.limpiarExpedientesHuerfanos = limpiarExpedientesHuerfanos;
+window.resetBaseDeDatos = resetBaseDeDatos;
