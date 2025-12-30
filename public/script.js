@@ -1034,6 +1034,15 @@ async function addNewTask() {
     document.getElementById('taskId').value = '';
     document.getElementById('char-count').textContent = '0';
     document.getElementById('archive-option').style.display = 'none';
+    
+    // Configurar campo para Nº SGR (Reemplaza Nº Siniestro)
+    const expInput = document.getElementById('taskExpedient');
+    const expLabel = document.querySelector("label[for='taskExpedient']");
+    if (expLabel) expLabel.textContent = "Nº SGR";
+    if (expInput) {
+        expInput.placeholder = "Ingrese Nº SGR";
+        delete expInput.dataset.siniestro; // Limpiar referencia previa
+    }
 
     // Cargar responsables en el select
     const respSelect = document.getElementById('taskResponsible');
@@ -1062,8 +1071,11 @@ async function saveTask() {
     console.log('Función saveTask llamada');
 
     const id = document.getElementById('taskId').value;
+    const sgrInput = document.getElementById('taskExpedient').value.trim();
+    const storedSiniestro = document.getElementById('taskExpedient').dataset.siniestro;
+    
     const taskData = {
-        num_siniestro: document.getElementById('taskExpedient').value,
+        // num_siniestro se calculará abajo
         responsable: document.getElementById('taskResponsible').value,
         descripcion: document.getElementById('taskDescription').value,
         prioridad: document.getElementById('taskPriority').value,
@@ -1071,13 +1083,44 @@ async function saveTask() {
         estado: document.getElementById('taskStatus').value
     };
 
-    if (!taskData.num_siniestro || !taskData.descripcion || !taskData.fecha_limite) {
+    if (!sgrInput || !taskData.descripcion || !taskData.fecha_limite) {
         showToast('warning', 'Datos incompletos', 'Por favor complete los campos obligatorios.');
         return;
     }
 
     showLoading();
     try {
+        let numSiniestroFinal = storedSiniestro;
+
+        // Lógica para manejar SGR y Siniestro
+        if (id && storedSiniestro) {
+            // EDICIÓN: Actualizar el SGR del expediente existente
+            const { error: expError } = await supabaseClient
+                .from('expedientes')
+                .update({ num_sgr: sgrInput })
+                .eq('num_siniestro', storedSiniestro);
+            
+            if (expError) {
+                console.warn('Error actualizando SGR en expediente:', expError);
+                // No bloqueamos el guardado de la tarea, pero avisamos
+            }
+        } else {
+            // CREACIÓN: Buscar expediente por SGR
+            const { data: exp, error: findError } = await supabaseClient
+                .from('expedientes')
+                .select('num_siniestro')
+                .eq('num_sgr', sgrInput)
+                .single();
+            
+            if (findError || !exp) {
+                throw new Error(`No se encontró ningún expediente con el Nº SGR: ${sgrInput}`);
+            }
+            numSiniestroFinal = exp.num_siniestro;
+        }
+
+        // Asignar el siniestro correcto a la tarea
+        taskData.num_siniestro = numSiniestroFinal;
+
         let error;
         if (id) {
             // Actualizar
@@ -1135,12 +1178,10 @@ async function loadTasks() {
     showLoading();
     
     try {
+        // 1. Consultar TAREAS (Sin JOIN para evitar error de FK inexistente)
         let query = supabaseClient
             .from('tareas')
-            .select(`
-                *,
-                expedientes!inner(referencia_gescon, num_sgr)
-            `, { count: 'exact' });
+            .select('*', { count: 'exact' });
         
         // FILTRO POR ROL (Usuario solo ve sus tareas, Admin ve todo)
         if (currentUser && !currentUser.isAdmin) {
@@ -1168,15 +1209,49 @@ async function loadTasks() {
             .range(from, to);
         
         if (error) throw error;
+
+        // 2. Consultar EXPEDIENTES relacionados manualmente (Join en memoria)
+        // Esto evita el error PGRST200 si no hay Foreign Key definida en la base de datos
+        let tasksWithExpedientes = tasks || [];
+        
+        if (tasks && tasks.length > 0) {
+            const siniestros = tasks.map(t => t.num_siniestro).filter(n => n);
+            
+            if (siniestros.length > 0) {
+                // Intentamos obtener datos extra. Usamos try/catch por si falta alguna columna
+                try {
+                    const { data: exps } = await supabaseClient
+                        .from('expedientes')
+                        .select('num_siniestro, num_sgr, referencia_gescon') 
+                        .in('num_siniestro', siniestros);
+
+                    if (exps) {
+                        const expMap = new Map(exps.map(e => [e.num_siniestro, e]));
+                        tasksWithExpedientes = tasks.map(t => {
+                            const exp = expMap.get(t.num_siniestro);
+                            return {
+                                ...t,
+                                expedientes: exp ? { 
+                                    referencia_gescon: exp.referencia_gescon, 
+                                    num_sgr: exp.num_sgr 
+                                } : null
+                            };
+                        });
+                    }
+                } catch (err) {
+                    console.warn('No se pudieron cargar detalles extra de expedientes:', err);
+                }
+            }
+        }
         
         tableBody.innerHTML = '';
         
-        if (!tasks || tasks.length === 0) {
+        if (!tasksWithExpedientes || tasksWithExpedientes.length === 0) {
             tableBody.innerHTML = '<tr><td colspan="11" class="text-center p-4">No hay tareas registradas.</td></tr>';
         } else {
             const todayStr = new Date().toISOString().split('T')[0];
             
-            tasks.forEach(task => {
+            tasksWithExpedientes.forEach(task => {
                 const row = document.createElement('tr');
                 
                 // --- LÓGICA DE ESTILOS Y ESTADOS ---
@@ -1240,7 +1315,10 @@ async function loadTasks() {
         }
     } catch (error) {
         console.error('Error loading tasks:', error);
-        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No se pudieron cargar las tareas</td></tr>';
+        const errorMsg = error.code === 'PGRST200' 
+            ? 'Error de Base de Datos: Falta relación (Foreign Key) entre Tareas y Expedientes.' 
+            : 'No se pudieron cargar las tareas. Revisa la consola.';
+        tableBody.innerHTML = `<tr><td colspan="11" class="text-center text-danger"><i class="bi bi-exclamation-triangle"></i> ${errorMsg}</td></tr>`;
     } finally {
         hideLoading();
     }
@@ -1256,10 +1334,31 @@ async function editTask(id) {
             .single();
             
         if (error) throw error;
+
+        // Obtener SGR del expediente relacionado
+        let numSGR = '';
+        if (task.num_siniestro) {
+            const { data: exp } = await supabaseClient
+                .from('expedientes')
+                .select('num_sgr')
+                .eq('num_siniestro', task.num_siniestro)
+                .single();
+            if (exp) numSGR = exp.num_sgr;
+        }
         
         // Rellenar formulario
         document.getElementById('taskId').value = task.id;
-        document.getElementById('taskExpedient').value = task.num_siniestro || '';
+        
+        // Configurar campo SGR y guardar referencia al siniestro
+        const expInput = document.getElementById('taskExpedient');
+        const expLabel = document.querySelector("label[for='taskExpedient']");
+        if (expLabel) expLabel.textContent = "Nº SGR";
+        if (expInput) {
+            expInput.value = numSGR || ''; // Mostrar SGR
+            expInput.dataset.siniestro = task.num_siniestro || ''; // Guardar Siniestro oculto
+            expInput.placeholder = "Ingrese Nº SGR";
+        }
+
         document.getElementById('taskResponsible').value = task.responsable || '';
         document.getElementById('taskDescription').value = task.descripcion || '';
         document.getElementById('taskPriority').value = task.prioridad || 'Media';
@@ -1278,13 +1377,25 @@ async function editTask(id) {
         // Actualizar contador
         document.getElementById('char-count').textContent = (task.descripcion || '').length;
         
-        // Mostrar modal
-        addNewTask(); // Reutiliza lógica de mostrar, pero ya hemos rellenado los valores
-        
-        // Asegurar que el modal se muestre (addNewTask lo hace, pero resetea el form, así que cuidado)
-        // Corrección: addNewTask resetea el form. Mejor mostrar modal directamente.
+        // Cargar responsables (copiado de addNewTask para evitar resetear el form)
+        const respSelect = document.getElementById('taskResponsible');
+        if (respSelect && respSelect.options.length <= 1) {
+            respSelect.innerHTML = '<option value="">Seleccionar...</option>';
+            const sourceData = (usersData && usersData.length > 0) ? usersData : responsiblesData;
+            sourceData.forEach(user => {
+                const opt = document.createElement('option');
+                const name = user.full_name || user.name || user.email;
+                opt.value = name;
+                opt.textContent = name;
+                respSelect.appendChild(opt);
+            });
+            // Restaurar valor seleccionado tras rellenar opciones
+            respSelect.value = task.responsable || '';
+        }
+
+        // Mostrar modal directamente (sin llamar a addNewTask que resetea todo)
         const modal = document.getElementById('taskModal');
-        modal.classList.add('active');
+        if (modal) modal.classList.add('active');
         
     } catch (error) {
         console.error(error);
