@@ -1391,9 +1391,21 @@ async function processAllDuplicates() {
             const { id, fecha_deteccion, veces_repetido, created_at, ...expedientData } = dup;
             
             // Upsert basado en num_siniestro
-            const { error: upsertError } = await supabaseClient
+            // FIX: Reemplazar upsert con check/update/insert manual para evitar error de restricción única
+            let upsertError = null;
+            const { data: existing } = await supabaseClient
                 .from('expedientes')
-                .upsert(expedientData, { onConflict: 'num_siniestro' });
+                .select('id')
+                .eq('num_siniestro', expedientData.num_siniestro)
+                .maybeSingle();
+
+            if (existing) {
+                const { error } = await supabaseClient.from('expedientes').update(expedientData).eq('id', existing.id);
+                upsertError = error;
+            } else {
+                const { error } = await supabaseClient.from('expedientes').insert([expedientData]);
+                upsertError = error;
+            }
                 
             if (upsertError) {
                 console.error(`Error procesando duplicado ${dup.num_siniestro}:`, upsertError);
@@ -1461,9 +1473,21 @@ async function processDuplicate(id) {
         const { id: dupId, fecha_deteccion, veces_repetido, created_at, ...expedientData } = dup;
         
         // Actualizar expediente
-        const { error: upsertError } = await supabaseClient
+        // FIX: Reemplazar upsert con check/update/insert manual
+        let upsertError = null;
+        const { data: existing } = await supabaseClient
             .from('expedientes')
-            .upsert(expedientData, { onConflict: 'num_siniestro' });
+            .select('id')
+            .eq('num_siniestro', expedientData.num_siniestro)
+            .maybeSingle();
+
+        if (existing) {
+            const { error } = await supabaseClient.from('expedientes').update(expedientData).eq('id', existing.id);
+            upsertError = error;
+        } else {
+            const { error } = await supabaseClient.from('expedientes').insert([expedientData]);
+            upsertError = error;
+        }
             
         if (upsertError) throw upsertError;
         
@@ -2801,10 +2825,10 @@ async function saveImportLog(logData) {
             }]);
             
         if (error) {
-            console.warn('No se pudo guardar el log en DB (¿Tabla import_logs existe?), usando UI local.', error);
+            console.log('Log de importación no guardado en DB (tabla no existe o error).');
         }
     } catch (e) {
-        console.error('Error saving import log:', e);
+        // console.error('Error saving import log:', e);
     }
 }
 
