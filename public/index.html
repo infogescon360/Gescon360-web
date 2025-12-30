@@ -499,6 +499,10 @@
                     <div class="table-header">
                         <h5 class="table-title">Gestión de Tareas</h5>
                         <div class="table-actions">
+                            <div class="input-group input-group-sm me-2" style="width: 250px; display: inline-flex;">
+                                <input type="text" class="form-control" id="taskSearchInput" placeholder="Buscar Nº o descripción..." onkeyup="if(event.key === 'Enter') searchTasks()">
+                                <button class="btn btn-outline-secondary" type="button" onclick="searchTasks()"><i class="bi bi-search"></i></button>
+                            </div>
                             <button class="btn-custom btn-outline-custom" onclick="filterTasks()">
                                 <i class="bi bi-funnel"></i> Filtrar
                             </button>

@@ -1153,6 +1153,13 @@ async function loadTasks() {
         if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
         if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
         
+        // Filtro de búsqueda por texto (Nº Siniestro o Descripción)
+        const searchInput = document.getElementById('taskSearchInput');
+        const searchTerm = searchInput ? searchInput.value.trim() : '';
+        if (searchTerm) {
+            query = query.or(`num_siniestro.ilike.%${searchTerm}%,descripcion.ilike.%${searchTerm}%`);
+        }
+
         const from = (currentTaskPage - 1) * TASKS_PER_PAGE;
         const to = from + TASKS_PER_PAGE - 1;
         
@@ -4083,5 +4090,10 @@ function renderTaskPagination(totalTasks) {
 
 function loadTasksPage(page) {
     currentTaskPage = page;
+    loadTasks();
+}
+
+function searchTasks() {
+    currentTaskPage = 1;
     loadTasks();
 }
