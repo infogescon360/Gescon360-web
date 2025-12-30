@@ -256,29 +256,24 @@ async function checkAuthStatus() {
         hideLoading();
 
         if (session && session.user) {
-            // Verificar si es admin consultando al servidor
-            const token = session.access_token;
+            // Obtener perfil completo (nombre y rol) desde Supabase
+            let fullName = session.user.email.split('@')[0];
             let isAdmin = false;
+
             try {
-                const adminCheck = await fetch('/admin/check', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (adminCheck.ok) {
-                    const adminData = await adminCheck.json();
-                    isAdmin = adminData.isAdmin;
+                const { data: profile } = await supabaseClient
+                    .from('profiles')
+                    .select('full_name, role')
+                    .eq('id', session.user.id)
+                    .single();
+
+                if (profile) {
+                    if (profile.full_name) fullName = profile.full_name;
+                    if (profile.role === 'admin') isAdmin = true;
                 }
             } catch (e) {
-                console.warn('Could not verify admin status', e);
+                console.warn('Error obteniendo perfil:', e);
             }
-
-            // Obtener nombre real del perfil para coincidencias de Realtime
-            let fullName = session.user.email.split('@')[0];
-            const { data: profile } = await supabaseClient
-                .from('profiles')
-                .select('full_name')
-                .eq('id', session.user.id)
-                .single();
-            if (profile && profile.full_name) fullName = profile.full_name;
 
             currentUser = {
                 email: session.user.email,
@@ -529,29 +524,24 @@ async function login() {
             // Guardar sesión
             if (data.session) localStorage.setItem('supabase.auth.token', data.session.access_token);
 
-            // Verificar admin tras login
-            const token = data.session.access_token;
+            // Obtener perfil completo (nombre y rol)
+            let fullName = data.user.email.split('@')[0];
             let isAdmin = false;
+
             try {
-                const adminCheck = await fetch('/admin/check', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (adminCheck.ok) {
-                    const adminData = await adminCheck.json();
-                    isAdmin = adminData.isAdmin;
+                const { data: profile } = await supabaseClient
+                    .from('profiles')
+                    .select('full_name, role')
+                    .eq('id', data.user.id)
+                    .single();
+
+                if (profile) {
+                    if (profile.full_name) fullName = profile.full_name;
+                    if (profile.role === 'admin') isAdmin = true;
                 }
             } catch (e) {
-                console.warn('Could not verify admin status', e);
+                console.warn('Error obteniendo perfil:', e);
             }
-
-            // Obtener nombre real del perfil
-            let fullName = data.user.email.split('@')[0];
-            const { data: profile } = await supabaseClient
-                .from('profiles')
-                .select('full_name')
-                .eq('id', data.user.id)
-                .single();
-            if (profile && profile.full_name) fullName = profile.full_name;
 
             currentUser = {
                 email: data.user.email,
@@ -3542,14 +3532,13 @@ async function checkIfCurrentUserIsAdmin() {
             return false;
         }
 
-        const response = await fetch(`${ADMIN_API_URL}/admin/check`, {
-            headers: {
-                'Authorization': `Bearer ${session.access_token}`
-            }
-        });
+        const { data: profile } = await supabaseClient
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
 
-        const result = await response.json();
-        return result.isAdmin === true;
+        return profile && profile.role === 'admin';
 
     } catch (error) {
         console.error('Error verificando rol de administrador:', error);
