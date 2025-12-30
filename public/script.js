@@ -2767,7 +2767,7 @@ async function distribuirTareasImportadas(expedientes, distribuirEquitativamente
 
             return {
                 num_siniestro: exp.num_siniestro,
-                referencia_gescon: exp.referencia_gescon, // Pasar referencia
+                // referencia_gescon: exp.referencia_gescon, // Pasar referencia (Desactivado por error de esquema)
                 responsable: responsable,
                 descripcion: `Gestión inicial del expediente ${exp.num_siniestro} (Importado)`,
                 // REQ: Prioridad Alta si importe > 1500 o fecha limite es hoy.
@@ -3093,11 +3093,11 @@ function normalizarExpediente(row, fileName, index) {
     }
 
     // REQ: Referencia Gescon = NombreFichero + Número
-    const referenciaGescon = `${fileName}_${index + 1}`;
+    // const referenciaGescon = `${fileName}_${index + 1}`;
 
     return {
         num_siniestro: numSiniestro,
-        referencia_gescon: referenciaGescon,
+        // referencia_gescon: referenciaGescon, // Columna no existe en DB
         num_poliza: cleanString(row['Nº Póliza'] || row['num_poliza'] || row['NUM_POLIZA']),
         num_sgr: cleanString(row['Nº SGR'] || row['num_sgr'] || row['NUM_SGR']), // REQ: Puede venir vacío para rellenar manual
         nombre_asegurado: cleanString(row['Asegurado'] || row['nombre_asegurado'] || row['NOMBRE']),
