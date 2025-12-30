@@ -2688,6 +2688,11 @@ async function importarExpedientes() {
         
         const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar);
 
+        // Verificar referencia generada (si la DB tiene trigger/columna generada)
+        if (resultado.expedientes && resultado.expedientes.length > 0) {
+            console.log('Referencia Gescon generada (ejemplo):', resultado.expedientes[0].referencia_gescon);
+        }
+
         // REGISTRAR IMPORTACIÓN (LOG)
         await saveImportLog({
             fileName: file.name,
@@ -3095,9 +3100,13 @@ function normalizarExpediente(row, fileName, index) {
     // REQ: Referencia Gescon = NombreFichero + Número
     // const referenciaGescon = `${fileName}_${index + 1}`;
 
+    // Extraer compañía del nombre del archivo (ej: Mapfre-02-12.xlsx -> Mapfre)
+    const companyName = fileName ? fileName.split('-')[0].trim() : '';
+
     return {
         num_siniestro: numSiniestro,
         // referencia_gescon: referenciaGescon, // Columna no existe en DB
+        cia_origen: companyName,
         num_poliza: cleanString(row['Nº Póliza'] || row['num_poliza'] || row['NUM_POLIZA']),
         num_sgr: cleanString(row['Nº SGR'] || row['num_sgr'] || row['NUM_SGR']), // REQ: Puede venir vacío para rellenar manual
         nombre_asegurado: cleanString(row['Asegurado'] || row['nombre_asegurado'] || row['NOMBRE']),
