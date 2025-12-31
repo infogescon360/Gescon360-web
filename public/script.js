@@ -1325,84 +1325,74 @@ async function loadTasks() {
 }
 
 async function editTask(id) {
-    showLoading();
-    try {
-        const { data: task, error } = await supabaseClient
-            .from('tareas')
-            .select('*')
-            .eq('id', id)
-            .single();
-            
-        if (error) throw error;
-
-        // Obtener SGR del expediente relacionado
-        let numSGR = '';
-        if (task.num_siniestro) {
-            const { data: exp } = await supabaseClient
-                .from('expedientes')
-                .select('num_sgr')
-                .eq('num_siniestro', task.num_siniestro)
-                .single();
-            if (exp) numSGR = exp.num_sgr;
-        }
-        
-        // Rellenar formulario
-        document.getElementById('taskId').value = task.id;
-        
-        // Configurar campo SGR y guardar referencia al siniestro
-        const expInput = document.getElementById('taskExpedient');
-        const expLabel = document.querySelector("label[for='taskExpedient']");
-        if (expLabel) expLabel.textContent = "Nº SGR";
-        if (expInput) {
-            expInput.value = numSGR || ''; // Mostrar SGR
-            expInput.dataset.siniestro = task.num_siniestro || ''; // Guardar Siniestro oculto
-            expInput.placeholder = "Ingrese Nº SGR";
-        }
-
-        document.getElementById('taskResponsible').value = task.responsable || '';
-        document.getElementById('taskDescription').value = task.descripcion || '';
-        document.getElementById('taskPriority').value = task.prioridad || 'Media';
-        document.getElementById('taskDueDate').value = task.fecha_limite || '';
-        document.getElementById('taskStatus').value = task.estado || 'Pendiente';
-        // Nota: Si el estado es "Pdte. revisión", asegurarse de que esté en el select (añadido en HTML)
-        
-        // Lógica de transición de estado: Si está en "Pdte. revisión" y se edita, sugerir "Iniciada"
-        // (Solo si no se cambia a un estado final)
-        const finalStates = ['Completada', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos', 'Recobrado', 'Archivado'];
-        if (task.estado === 'Pdte. revisión' && !finalStates.includes(document.getElementById('taskStatus').value)) {
-             // Opcional: cambiar automáticamente o dejar que el usuario lo haga. 
-             // El requerimiento dice "hasta que se cambie manualmente... pasará a Iniciada".
-        }
-
-        // Actualizar contador
-        document.getElementById('char-count').textContent = (task.descripcion || '').length;
-        
-        // Cargar responsables (copiado de addNewTask para evitar resetear el form)
-        const respSelect = document.getElementById('taskResponsible');
-        if (respSelect && respSelect.options.length <= 1) {
-            respSelect.innerHTML = '<option value="">Seleccionar...</option>';
-            const sourceData = (usersData && usersData.length > 0) ? usersData : responsiblesData;
-            sourceData.forEach(user => {
-                const opt = document.createElement('option');
-                const name = user.full_name || user.name || user.email;
-                opt.value = name;
-                opt.textContent = name;
-                respSelect.appendChild(opt);
-            });
-            // Restaurar valor seleccionado tras rellenar opciones
-            respSelect.value = task.responsable || '';
-        }
-
-        // Mostrar modal directamente (sin llamar a addNewTask que resetea todo)
-        const modal = document.getElementById('taskModal');
-        if (modal) modal.classList.add('active');
-        
-    } catch (error) {
-        console.error(error);
-        showToast('danger', 'Error', 'No se pudo cargar la tarea');
-    } finally {
-        hideLoading();
+  showLoading();
+  try {
+    const { data: task, error } = await supabaseClient
+      .from('tareas')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    
+    // Obtener SGR del expediente relacionado
+    let numSGR = '';
+    if (task.num_siniestro) {
+      const { data: exp } = await supabaseClient
+        .from('expedientes')
+        .select('num_sgr')
+        .eq('num_siniestro', task.num_siniestro)
+        .single();
+      if (exp) numSGR = exp.num_sgr;
     }
+    
+    // Rellenar formulario
+    document.getElementById('taskId').value = task.id;
+    
+    // ✅ CONFIGURAR CAMPO SGR Y GUARDAR REFERENCIA AL SINIESTRO
+    const expInput = document.getElementById('taskExpedient');
+    const expLabel = document.querySelector("label[for='taskExpedient']");
+    if (expLabel) expLabel.textContent = "Nº SGR";  // 👈 CAMBIA EL LABEL
+    if (expInput) {
+      expInput.value = numSGR || ''; // Mostrar SGR
+      expInput.dataset.siniestro = task.num_siniestro || ''; // Guardar Siniestro oculto
+      expInput.placeholder = "Ingrese Nº SGR";
+    }
+    
+    document.getElementById('taskResponsible').value = task.responsable || '';
+    document.getElementById('taskDescription').value = task.descripcion || '';
+    document.getElementById('taskPriority').value = task.prioridad || 'Media';
+    document.getElementById('taskDueDate').value = task.fecha_limite || '';
+    document.getElementById('taskStatus').value = task.estado || 'Pendiente';
+    
+    // Actualizar contador
+    document.getElementById('char-count').textContent = (task.descripcion || '').length;
+    
+    // Cargar responsables
+    const respSelect = document.getElementById('taskResponsible');
+    if (respSelect && respSelect.options.length <= 1) {
+      respSelect.innerHTML = '<option value="">Seleccionar...</option>';
+      const sourceData = (usersData && usersData.length > 0) ? usersData : responsiblesData;
+      sourceData.forEach(user => {
+        const opt = document.createElement('option');
+        const name = user.full_name || user.name || user.email;
+        opt.value = name;
+        opt.textContent = name;
+        respSelect.appendChild(opt);
+      });
+      respSelect.value = task.responsable || '';
+    }
+    
+    // Mostrar modal
+    const modal = document.getElementById('taskModal');
+    if (modal) modal.classList.add('active');
+    
+  } catch (error) {
+    console.error(error);
+    showToast('danger', 'Error', 'No se pudo cargar la tarea');
+  } finally {
+    hideLoading();
+  }
 }
 
 function filterTasks() {
