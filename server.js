@@ -745,6 +745,7 @@ app.post('/admin/users', async (req, res) => {
     let user;
     try {
       user = await getUserFromToken(token);
+      console.log('DEBUG: /admin/users - User ID:', user.id, 'Email:', user.email);
     } catch (e) {
       return res.status(401).json({ error: 'Sesión no válida' });
     }
@@ -758,6 +759,8 @@ app.post('/admin/users', async (req, res) => {
         .select('role')
         .eq('id', user.id)
         .maybeSingle();
+
+      console.log('DEBUG: /admin/users - Profile check:', { userId: user.id, profileFound: !!profile, role: profile?.role, error: profileError });
 
       if (profileError || !profile || profile.role !== 'admin') {
         return res.status(403).json({ error: 'Solo administradores pueden crear usuarios' });
@@ -787,7 +790,7 @@ app.post('/admin/users', async (req, res) => {
 
     if (createError) {
       console.error('Error creando usuario en Auth:', createError);
-      return res.status(500).json({ error: 'No se pudo crear el usuario en Supabase Auth' });
+      return res.status(500).json({ error: `No se pudo crear el usuario en Supabase Auth: ${createError.message}` });
     }
 
     const userId = createdUser.user?.id;
