@@ -1194,11 +1194,33 @@ async function loadTasks() {
         if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
         if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
         
-        // Filtro de búsqueda por texto (Nº Siniestro o Descripción)
+        // Filtro de búsqueda por texto (Nº Siniestro, Descripción o Nº SGR)
         const searchInput = document.getElementById('taskSearchInput');
         const searchTerm = searchInput ? searchInput.value.trim() : '';
+        
         if (searchTerm) {
-            query = query.or(`num_siniestro.ilike.%${searchTerm}%,descripcion.ilike.%${searchTerm}%`);
+            // Búsqueda mejorada: Incluir búsqueda por SGR (que está en tabla expedientes)
+            let sgrSiniestros = [];
+            
+            // Intentamos buscar coincidencias en expedientes por SGR
+            const { data: sgrMatches } = await supabaseClient
+                .from('expedientes')
+                .select('num_siniestro')
+                .ilike('num_sgr', `%${searchTerm}%`)
+                .limit(20); // Límite para evitar URLs gigantes
+                
+            if (sgrMatches && sgrMatches.length > 0) {
+                sgrSiniestros = sgrMatches.map(e => e.num_siniestro);
+            }
+
+            // Construir query OR: Descripción OR Siniestro OR (Siniestros encontrados por SGR)
+            let orConditions = [`num_siniestro.ilike.%${searchTerm}%`, `descripcion.ilike.%${searchTerm}%`];
+            if (sgrSiniestros.length > 0) {
+                // Añadimos cada siniestro encontrado como una condición EQ
+                sgrSiniestros.forEach(sin => orConditions.push(`num_siniestro.eq.${sin}`));
+            }
+            
+            query = query.or(orConditions.join(','));
         }
 
         const from = (currentTaskPage - 1) * TASKS_PER_PAGE;
