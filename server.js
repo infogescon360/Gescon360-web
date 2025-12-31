@@ -287,7 +287,7 @@ app.patch('/api/tareas/:id', async (req, res) => {
     ];
 
     if (estadosFinales.includes(cambios.estado)) {
-      const { data: expData, error: getErr } = await supabase
+      const { data: expData, error: getErr } = await supabaseAdmin
         .from('expedientes')
         .select('*')
         .eq('id', id)
@@ -301,13 +301,13 @@ app.patch('/api/tareas/:id', async (req, res) => {
         motivo_archivo: cambios.estado,
       };
 
-      const { error: insErr } = await supabase
+      const { error: insErr } = await supabaseAdmin
         .from('expedientes_archivados')
         .insert(archivado);
 
       if (insErr) return res.status(500).json({ error: insErr.message });
 
-      await supabase.from('expedientes').delete().eq('id', id);
+      await supabaseAdmin.from('expedientes').delete().eq('id', id);
       return res.json({ ok: true, archivado: true });
     }
 
@@ -354,7 +354,7 @@ app.post('/api/duplicados/verificar', async (req, res) => {
     
     const duplicados = [];
     for (const exp of expedientes) {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('expedientes')
         .select('*')
         .or(`numero_expediente.eq.${exp.numero_expediente},numero_poliza.eq.${exp.numero_poliza},dni.eq.${exp.dni}`);
@@ -378,7 +378,7 @@ app.post('/api/duplicados/verificar', async (req, res) => {
 app.get('/api/archivados', async (req, res) => {
   try {
     const { motivo, desde, hasta, limite = 50 } = req.query;
-    let query = supabase.from('expedientes_archivados').select('*');
+    let query = supabaseAdmin.from('expedientes_archivados').select('*');
     
     if (motivo) query = query.eq('motivo_archivo', motivo);
     if (desde) query = query.gte('fecha_archivo', desde);
@@ -398,7 +398,7 @@ app.post('/api/archivados/:id/restaurar', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const { data: archivado, error: getErr } = await supabase
+    const { data: archivado, error: getErr } = await supabaseAdmin
       .from('expedientes_archivados')
       .select('*')
       .eq('id', id)
@@ -406,7 +406,7 @@ app.post('/api/archivados/:id/restaurar', async (req, res) => {
     
     if (getErr) return res.status(500).json({ error: getErr.message });
     
-    const { error: insErr } = await supabase
+    const { error: insErr } = await supabaseAdmin
       .from('expedientes')
       .insert({
         ...archivado,
@@ -415,7 +415,7 @@ app.post('/api/archivados/:id/restaurar', async (req, res) => {
     
     if (insErr) return res.status(500).json({ error: insErr.message });
     
-    await supabase.from('expedientes_archivados').delete().eq('id', id);
+    await supabaseAdmin.from('expedientes_archivados').delete().eq('id', id);
     
     res.json({ ok: true, message: 'Expediente restaurado correctamente' });
   } catch (e) {
@@ -471,7 +471,7 @@ app.post('/api/expedientes/importar', async (req, res) => {
     for (const exp of expedientes) {
       try {
         if (opciones?.verificarDuplicados) {
-          const { data: existe } = await supabase
+          const { data: existe } = await supabaseAdmin
             .from('expedientes')
             .select('id')
             .eq('numero_expediente', exp.numero_expediente)
@@ -483,7 +483,7 @@ app.post('/api/expedientes/importar', async (req, res) => {
           }
         }
         
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
           .from('expedientes')
           .insert(exp)
           .select()
@@ -636,7 +636,7 @@ app.delete('/api/expedientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const { data: expediente, error: getError } = await supabase
+    const { data: expediente, error: getError } = await supabaseAdmin
       .from('expedientes')
       .select('*')
       .eq('id', id)
@@ -644,7 +644,7 @@ app.delete('/api/expedientes/:id', async (req, res) => {
     
     if (getError) return res.status(404).json({ error: 'Expediente no encontrado' });
     
-    await supabase
+    await supabaseAdmin
       .from('expedientes_archivados')
       .insert({
         ...expediente,
@@ -652,7 +652,7 @@ app.delete('/api/expedientes/:id', async (req, res) => {
         fecha_archivo: new Date().toISOString()
       });
     
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseAdmin
       .from('expedientes')
       .delete()
       .eq('id', id);
