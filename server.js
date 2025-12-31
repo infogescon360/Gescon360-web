@@ -733,7 +733,7 @@ app.post('/admin/users', async (req, res) => {
       return res.status(401).json({ error: 'Sesión no válida' });
     }
 
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('role')
       .eq('id', user.id)
