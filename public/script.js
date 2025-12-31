@@ -1756,6 +1756,7 @@ async function loadUsers
 
     showLoading();
     try {
+<<<<<<< HEAD
         const { data: { session } } = await supabaseClient.auth.getSession();
         const response = await fetch('/admin/users', {
             headers: { 'Authorization': `Bearer ${session.access_token}` }
@@ -1763,6 +1764,18 @@ async function loadUsers
         if (!response.ok) throw new Error('Error al cargar usuarios');
         const users = await response.json();
 
+=======
+        // Usar endpoint del backend para evitar errores RLS (500)
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
+
+        const response = await fetch('/admin/users', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (!response.ok) throw new Error('Error al cargar usuarios desde el servidor');
+        const users = await response.json();
+>>>>>>> 05039a7 (Admin: CREACION DE USUARIOS & script.js 31/12/2025)
 
         tableBody.innerHTML = '';
         if (!users || users.length === 0) {
@@ -1927,12 +1940,15 @@ async function loadResponsibles() {
 
     showLoading();
     try {
-        // Fetch profiles
-        const { data: users, error: uError } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .order('full_name');
-        if (uError) throw uError;
+        // Fetch profiles via backend (seguro)
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
+
+        const response = await fetch('/admin/users', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        if (!response.ok) throw new Error('Error cargando responsables');
+        const users = await response.json();
 
         // Fetch task counts
         const { data: tasks, error: tError } = await supabaseClient

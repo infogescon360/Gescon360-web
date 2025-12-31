@@ -734,23 +734,10 @@ app.post('/api/expedientes/:id/seguimientos', async (req, res) => {
 // ============================================================================
 // ADMIN: CREACIÓN DE USUARIOS
 // ============================================================================
-
 // Endpoint para OBTENER todos los usuarios (GET)
-app.get('/admin/users', async (req, res) => {
+app.get('/admin/users', requireAuth, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace('Bearer ', '').trim();
-
-    if (!token) {
-      return res.status(401).json({ error: 'Token de autenticación no proporcionado' });
-    }
-
-    let user;
-    try {
-      user = await getUserFromToken(token);
-    } catch (e) {
-      return res.status(401).json({ error: 'Sesión no válida' });
-    }
+    const user = req.user;
 
     // Verificar que el usuario es admin
     const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
@@ -766,23 +753,19 @@ app.get('/admin/users', async (req, res) => {
       }
     }
 
-    // Obtener todos los usuarios de la tabla profiles
-    const { data: profiles, error: profilesError } = await supabaseAdmin
+    // Usar supabaseAdmin para evitar errores RLS (500) al listar perfiles
+    const { data: profiles, error } = await supabaseAdmin
       .from('profiles')
       .select('*')
-      .order('email', { ascending: true });
-
-    if (profilesError) {
-      console.error('Error obteniendo perfiles:', profilesError);
-      return res.status(500).json({ error: 'Error obteniendo usuarios' });
-    }
-
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
     console.log('DEBUG: /admin/users GET - Devolviendo', profiles.length, 'usuarios');
-    return res.json(profiles || []);
-
+    res.json(profiles);
   } catch (e) {
     console.error('Error en GET /admin/users:', e);
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -841,6 +824,30 @@ app.post('/admin/users', async (req, res) => {
     });
 
     if (createError) {
+      // Si el usuario ya existe, intentamos recuperar su perfil o crearlo
+      if (createError.message?.includes('already registered') || createError.status === 422) {
+         const { data: { users: authUsers }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+         if (!listError && authUsers) {
+             const existing = authUsers.find(u => u.email === email);
+             if (existing) {
+                 // Upsert del perfil para asegurar que existe en la tabla profiles
+                 const { error: upsertError } = await supabaseAdmin
+                    .from('profiles')
+                    .upsert({
+                        id: existing.id,
+                        email: email,
+                        full_name: fullName || email.split('@')[0],
+                        role: role,
+                        status: 'active'
+                    });
+                 
+                 if (upsertError) {
+                     return res.status(500).json({ error: 'Usuario existe en Auth pero falló al crear perfil: ' + upsertError.message });
+                 }
+                 return res.json({ message: 'Usuario ya existía. Perfil actualizado correctamente.', email, role });
+             }
+         }
+      }
       console.error('Error creando usuario en Auth:', createError);
       return res.status(500).json({ error: `No se pudo crear el usuario en Supabase Auth: ${createError.message}` });
     }
@@ -887,7 +894,7 @@ function generateStrongPassword(length = 12) {
 // ---------------------------------------------------------------------
 app.get('/api/clientes', async (req, res) => {
   try {
-    const { buscar, limite = 50 } = req.query;
+    const { buscar, limite = 50, offset = 0 } = req.query;
     let query = supabase.from('clientes').select('*');
     if (buscar) query = query.or(`nombre.ilike.%${buscar}%,apellidos.ilike.%${buscar}%,dni.ilike.%${buscar}%,email.ilike.%${buscar}%`);
     query = query
@@ -904,14 +911,7 @@ app.get('/api/clientes', async (req, res) => {
 app.get('/api/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { data, error } = await supabase
-  .from('expedientes')
-  .insert({
-    ...expediente,
-    estado: expediente.estado || 'Pendiente'
-  })
-  .select()
-  .single();
+    const { data, error } = await supabase.from('clientes').select('*').eq('id', id).single();
     if (error) return res.status(404).json({ error: 'Cliente no encontrado' });
     res.json(data);
   } catch (e) {
