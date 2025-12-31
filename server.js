@@ -734,6 +734,58 @@ app.post('/api/expedientes/:id/seguimientos', async (req, res) => {
 // ============================================================================
 // ADMIN: CREACIÓN DE USUARIOS
 // ============================================================================
+
+// Endpoint para OBTENER todos los usuarios (GET)
+app.get('/admin/users', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '').trim();
+
+    if (!token) {
+      return res.status(401).json({ error: 'Token de autenticación no proporcionado' });
+    }
+
+    let user;
+    try {
+      user = await getUserFromToken(token);
+    } catch (e) {
+      return res.status(401).json({ error: 'Sesión no válida' });
+    }
+
+    // Verificar que el usuario es admin
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileError || !profile || profile.role !== 'admin') {
+        return res.status(403).json({ error: 'Solo administradores pueden ver usuarios' });
+      }
+    }
+
+    // Obtener todos los usuarios de la tabla profiles
+    const { data: profiles, error: profilesError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .order('email', { ascending: true });
+
+    if (profilesError) {
+      console.error('Error obteniendo perfiles:', profilesError);
+      return res.status(500).json({ error: 'Error obteniendo usuarios' });
+    }
+
+    console.log('DEBUG: /admin/users GET - Devolviendo', profiles.length, 'usuarios');
+    return res.json(profiles || []);
+
+  } catch (e) {
+    console.error('Error en GET /admin/users:', e);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
 app.post('/admin/users', async (req, res) => {
   try {
     const authHeader = req.headers.authorization || '';
