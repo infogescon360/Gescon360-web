@@ -726,11 +726,10 @@ app.post('/admin/users', async (req, res) => {
       return res.status(401).json({ error: 'Token de autenticación no proporcionado' });
     }
 
-    const { data: { user }, error: authError } = supabase.auth.getUser
-      ? await supabase.auth.getUser(token)
-      : { data: { user: null }, error: { message: 'Método getUser no disponible' } };
-
-    if (authError || !user) {
+    let user;
+    try {
+      user = await getUserFromToken(token);
+    } catch (e) {
       return res.status(401).json({ error: 'Sesión no válida' });
     }
 
