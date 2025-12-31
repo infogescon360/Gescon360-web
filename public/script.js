@@ -1748,20 +1748,23 @@ async function saveUser() {
     }
 }
 
-async function loadUsers
-    () {
+async function loadUsers() {
     console.log('Cargando usuarios...');
     const tableBody = document.getElementById('usersTable');
     if (!tableBody) return;
 
     showLoading();
     try {
-        const { data: users, error } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
+        // Usar endpoint del backend para evitar errores RLS (500)
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
 
-        if (error) throw error;
+        const response = await fetch('/admin/users', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (!response.ok) throw new Error('Error al cargar usuarios desde el servidor');
+        const users = await response.json();
 
         tableBody.innerHTML = '';
         if (!users || users.length === 0) {
