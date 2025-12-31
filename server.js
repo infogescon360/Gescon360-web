@@ -92,6 +92,22 @@ async function updateAdminStatus(targetUserId, makeAdmin) {
   return await response.json();
 }
 
+// Middleware de autenticación
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No se proporcionó token de autorización' });
+  }
+  const token = authHeader.substring(7);
+  try {
+    const user = await getUserFromToken(token);
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Sesión no válida' });
+  }
+}
+
 // ============================================================================
 // AUTENTICACIÓN: LOGIN
 // ============================================================================
@@ -275,7 +291,7 @@ app.get('/api/tareas', async (req, res) => {
   }
 });
 
-app.patch('/api/tareas/:id', async (req, res) => {
+app.patch('/api/tareas/:id', requireAuth, async (req, res) => {
   try {
     const id = req.params.id;
     const cambios = req.body;
@@ -345,7 +361,7 @@ app.get('/api/expedientes/buscar', async (req, res) => {
   }
 });
 
-app.post('/api/duplicados/verificar', async (req, res) => {
+app.post('/api/duplicados/verificar', requireAuth, async (req, res) => {
   try {
     const { expedientes } = req.body;
     if (!Array.isArray(expedientes)) {
@@ -375,7 +391,7 @@ app.post('/api/duplicados/verificar', async (req, res) => {
   }
 });
 
-app.get('/api/archivados', async (req, res) => {
+app.get('/api/archivados', requireAuth, async (req, res) => {
   try {
     const { motivo, desde, hasta, limite = 50 } = req.query;
     let query = supabaseAdmin.from('expedientes_archivados').select('*');
@@ -394,7 +410,7 @@ query = query.order('fecha_archivo', { ascending: false }).limit(parseInt(limite
   }
 });
 
-app.post('/api/archivados/:id/restaurar', async (req, res) => {
+app.post('/api/archivados/:id/restaurar', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -454,7 +470,7 @@ app.get('/api/reportes/estadisticas', async (req, res) => {
   }
 });
 
-app.post('/api/expedientes/importar', async (req, res) => {
+app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
   try {
     const { expedientes, opciones } = req.body;
     
@@ -632,7 +648,7 @@ app.put('/api/expedientes/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/expedientes/:id', async (req, res) => {
+app.delete('/api/expedientes/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
