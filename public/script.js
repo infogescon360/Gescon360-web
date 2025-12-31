@@ -1748,7 +1748,7 @@ async function saveUser() {
     }
 }
 
-async 1756
+async function loadUsers
     () {
     console.log('Cargando usuarios...');
     const tableBody = document.getElementById('usersTable');
