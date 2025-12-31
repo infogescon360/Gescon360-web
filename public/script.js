@@ -1756,26 +1756,12 @@ async function loadUsers
 
     showLoading();
     try {
-<<<<<<< HEAD
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        const response = await fetch('/admin/users', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        if (!response.ok) throw new Error('Error al cargar usuarios');
-        const users = await response.json();
+        const { data: users, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-=======
-        // Usar endpoint del backend para evitar errores RLS (500)
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No hay sesión activa');
-
-        const response = await fetch('/admin/users', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-
-        if (!response.ok) throw new Error('Error al cargar usuarios desde el servidor');
-        const users = await response.json();
->>>>>>> 05039a7 (Admin: CREACION DE USUARIOS & script.js 31/12/2025)
+        if (error) throw error;
 
         tableBody.innerHTML = '';
         if (!users || users.length === 0) {
@@ -1951,10 +1937,17 @@ async function loadResponsibles() {
         const users = await response.json();
 
         // Fetch task counts
-        const { data: tasks, error: tError } = await supabaseClient
-            .from('tareas')
-            .select('responsable, estado');
-        if (tError) throw tError;
+        let tasks = [];
+        try {
+            const { data, error: tError } = await supabaseClient
+                .from('tareas')
+                .select('responsable, estado');
+            if (tError) throw tError;
+            tasks = data || [];
+        } catch (e) {
+            console.warn('No se pudieron cargar las tareas para estadísticas (posible error RLS):', e);
+            // Continuamos sin tareas para no bloquear la lista de usuarios
+        }
 
         // Aggregate stats
         const stats = {};

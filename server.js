@@ -754,12 +754,42 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     }
 
     // Usar supabaseAdmin para evitar errores RLS (500) al listar perfiles
-    const { data: profiles, error } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Intentamos primero con la tabla profiles
+    let profiles = [];
+    let profilesError = null;
     
-    if (error) throw error;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      profiles = data;
+    } catch (err) {
+      console.error('Error accediendo a tabla profiles (posible RLS recursion):', err.message);
+      profilesError = err;
+    }
+
+    // Si falla profiles (ej. RLS recursion), intentamos obtener usuarios desde Auth API
+    if (profilesError) {
+       console.log('Intentando fallback a Auth Admin API...');
+       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+       
+       if (authError) throw new Error(`Error crítico: ${profilesError.message} | Auth: ${authError.message}`);
+       
+       // Mapear usuarios de Auth a estructura de perfil
+       if (authData && authData.users) {
+         profiles = authData.users.map(u => ({
+           id: u.id,
+           email: u.email,
+           full_name: u.user_metadata?.full_name || u.email.split('@')[0],
+           role: u.app_metadata?.is_super_admin ? 'admin' : (u.user_metadata?.role || 'user'),
+           status: 'active',
+           created_at: u.created_at
+         }));
+       }
+    }
     
     console.log('DEBUG: /admin/users GET - Devolviendo', profiles.length, 'usuarios');
     res.json(profiles);
