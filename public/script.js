@@ -1748,19 +1748,21 @@ async function saveUser() {
     }
 }
 
-async function loadUsers() {
+async 1756
+    () {
     console.log('Cargando usuarios...');
     const tableBody = document.getElementById('usersTable');
     if (!tableBody) return;
 
     showLoading();
     try {
-        const { data: users, error } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const response = await fetch('/admin/users', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        if (!response.ok) throw new Error('Error al cargar usuarios');
+        const users = await response.json();
 
-        if (error) throw error;
 
         tableBody.innerHTML = '';
         if (!users || users.length === 0) {
