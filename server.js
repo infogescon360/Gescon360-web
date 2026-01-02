@@ -1218,6 +1218,72 @@ app.post('/admin/tasks/redistribute', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint para REASIGNAR CARGA DE TRABAJO (Expedientes y Tareas)
+app.post('/admin/reassign-workload', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const { sourceUserId, targetUserId } = req.body;
+
+    // Verificar permisos de admin
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+      const appMeta = user.app_metadata || {};
+      if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
+        return res.status(403).json({ error: 'Solo administradores pueden reasignar carga de trabajo' });
+      }
+    }
+
+    if (!sourceUserId || !targetUserId) {
+      return res.status(400).json({ error: 'IDs de origen y destino requeridos' });
+    }
+
+    if (sourceUserId === targetUserId) {
+      return res.status(400).json({ error: 'El usuario de origen y destino no pueden ser el mismo' });
+    }
+
+    // Obtener perfiles para manejar la reasignación de tareas (que usa texto)
+    const { data: sourceProfile } = await supabaseAdmin.from('profiles').select('full_name, email').eq('id', sourceUserId).single();
+    const { data: targetProfile } = await supabaseAdmin.from('profiles').select('full_name, email').eq('id', targetUserId).single();
+
+    if (!targetProfile) return res.status(404).json({ error: 'Usuario destino no encontrado' });
+
+    // 1. Reasignar Expedientes (gestor_id)
+    const { error: expError, count: expCount } = await supabaseAdmin
+      .from('expedientes')
+      .update({ gestor_id: targetUserId })
+      .eq('gestor_id', sourceUserId)
+      .select('id', { count: 'exact' });
+
+    if (expError) throw new Error(`Error reasignando expedientes: ${expError.message}`);
+
+    // 2. Reasignar Tareas (responsable es texto)
+    let tasksCount = 0;
+    if (sourceProfile) {
+       const targetName = targetProfile.full_name || targetProfile.email;
+       // Actualizar por nombre o email
+       const searchTerms = [sourceProfile.full_name, sourceProfile.email].filter(Boolean);
+       
+       if (searchTerms.length > 0) {
+         const { count } = await supabaseAdmin
+            .from('tareas')
+            .update({ responsable: targetName })
+            .in('responsable', searchTerms)
+            .select('id', { count: 'exact' });
+         tasksCount = count || 0;
+       }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Reasignación completada. Expedientes transferidos: ${expCount || 0}. Tareas transferidas: ${tasksCount}.` 
+    });
+
+  } catch (e) {
+    console.error('Error en /admin/reassign-workload:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint de utilidad para migrar roles de 'profiles' a 'app_metadata'
 app.post('/admin/migrate-roles', requireAuth, async (req, res) => {
   try {

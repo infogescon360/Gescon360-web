@@ -2217,7 +2217,7 @@ async function openReassignTasksModal() {
         const optionsHtml = users.map(u => {
             const name = u.full_name || u.email;
             const statusLabel = u.status === 'active' ? '' : ` (${u.status})`;
-            return `<option value="${name}">${name}${statusLabel}</option>`;
+            return `<option value="${u.id}">${name}${statusLabel}</option>`;
         }).join('');
         
         fromSelect.innerHTML = '<option value="">Seleccionar usuario origen...</option>' + optionsHtml;
@@ -2235,37 +2235,42 @@ async function openReassignTasksModal() {
 }
 
 async function executeReassignment() {
-    const fromUser = document.getElementById('reassignFromUser').value;
-    const toUser = document.getElementById('reassignToUser').value;
+    const fromSelect = document.getElementById('reassignFromUser');
+    const toSelect = document.getElementById('reassignToUser');
+    const fromUserId = fromSelect.value;
+    const toUserId = toSelect.value;
     
-    if (!fromUser || !toUser) {
+    if (!fromUserId || !toUserId) {
         showToast('warning', 'Datos incompletos', 'Seleccione ambos usuarios.');
         return;
     }
     
-    if (fromUser === toUser) {
+    if (fromUserId === toUserId) {
         showToast('warning', 'Error', 'El usuario de origen y destino no pueden ser el mismo.');
         return;
     }
     
-    if (!confirm(`¿Está seguro de reasignar todas las tareas pendientes de "${fromUser}" a "${toUser}"?`)) return;
+    const fromUserName = fromSelect.options[fromSelect.selectedIndex].text;
+    const toUserName = toSelect.options[toSelect.selectedIndex].text;
+    
+    if (!confirm(`¿Está seguro de reasignar todos los expedientes y tareas de "${fromUserName}" a "${toUserName}"?`)) return;
     
     showLoading();
     try {
-        // Actualizar tareas pendientes
-        const { error, count } = await supabaseClient
-            .from('tareas')
-            .update({ responsable: toUser })
-            .eq('responsable', fromUser)
-            .neq('estado', 'Completada')
-            .neq('estado', 'Recobrado')
-            .neq('estado', 'Rehusado NO cobertura')
-            .neq('estado', 'Archivado')
-            .neq('estado', 'Datos NO válidos'); // Opcional: incluir o excluir según lógica de negocio
-            
-        if (error) throw error;
+        const session = await supabaseClient.auth.getSession();
+        const response = await fetch('/admin/reassign-workload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.data.session.access_token}`
+            },
+            body: JSON.stringify({ sourceUserId: fromUserId, targetUserId: toUserId })
+        });
         
-        showToast('success', 'Reasignación completada', `Las tareas han sido transferidas correctamente.`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Error en la reasignación');
+        
+        showToast('success', 'Reasignación completada', result.message);
         closeModal('reassignTasksModal');
         
         // Recargar si estamos en una vista relevante
