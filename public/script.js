@@ -1966,7 +1966,7 @@ function renderResponsiblesTable(users, tasks = []) {
     const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
     // Botón de redistribución manual
-    const headerHtml = `<div class="d-flex justify-content-end mb-3"><button class="btn btn-outline-warning btn-sm" onclick="redistributeTasksManual()"><i class="bi bi-shuffle"></i> Redistribuir Carga de Ausentes</button></div>`;
+    const headerHtml = `<div class="d-flex justify-content-end mb-3"><button class="btn btn-outline-warning btn-sm" onclick="distributeWorkload()"><i class="bi bi-shuffle"></i> Redistribuir Carga de Ausentes</button></div>`;
 
     const stats = {};
     users.forEach(u => {
@@ -2028,27 +2028,6 @@ function renderResponsiblesTable(users, tasks = []) {
         `;
         container.appendChild(card);
     });
-}
-
-async function redistributeTasksManual() {
-    if (!confirm('¿Redistribuir tareas pendientes de usuarios NO disponibles (Vacaciones, Baja, etc.) entre los activos?')) return;
-    showLoading();
-    try {
-        const session = await supabaseClient.auth.getSession();
-        const response = await fetch('/admin/tasks/redistribute', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        
-        showToast('success', 'Redistribución', result.message);
-        loadResponsibles(); // Recargar para ver cambios si los hubiera en contadores
-    } catch (e) {
-        showToast('danger', 'Error', e.message);
-    } finally {
-        hideLoading();
-    }
 }
 
 function addResponsible() {
@@ -2181,105 +2160,38 @@ async function deleteResponsible(id) {
 }
 
 async function distributeWorkload() {
-    console.log('Distribuyendo carga de trabajo...');
-    if (!confirm('¿Desea asignar automáticamente las tareas pendientes (sin responsable) a los usuarios activos, equilibrando la carga de trabajo?')) return;
+    if (!confirm('¿Redistribuir todas las tareas de usuarios no disponibles entre los usuarios activos?')) {
+        return;
+    }
 
     showLoading();
-
     try {
-        // 1. Obtener tareas sin responsable
-        const { data: pendingTasks, error: tasksError } = await supabaseClient
-            .from('tareas')
-            .select('*')
-            .or('responsable.is.null,responsable.eq.""')
-            .neq('estado', 'Completada')
-            .neq('estado', 'Recobrado');
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
 
-        if (tasksError) throw tasksError;
-
-        if (!pendingTasks || pendingTasks.length === 0) {
-            showToast('info', 'Sin tareas', 'No hay tareas pendientes de asignar.');
-            return;
-        }
-
-        // 2. Obtener usuarios activos
-        const { data: users, error: usersError } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .eq('status', 'active');
-
-        if (usersError) throw usersError;
-
-        if (!users || users.length === 0) {
-            showToast('warning', 'Sin usuarios', 'No hay usuarios activos disponibles.');
-            return;
-        }
-
-        // 3. Calcular carga actual
-        const { data: activeTasks, error: loadError } = await supabaseClient
-            .from('tareas')
-            .select('responsable')
-            .neq('estado', 'Completada')
-            .neq('estado', 'Recobrado')
-            .not('responsable', 'is', null)
-            .neq('responsable', '');
-
-        if (loadError) throw loadError;
-
-        // Mapa de carga: { "Nombre Usuario": count }
-        const workload = {};
-        users.forEach(u => {
-            const name = u.full_name || u.email;
-            workload[name] = 0;
-        });
-
-        activeTasks.forEach(t => {
-            if (workload.hasOwnProperty(t.responsable)) {
-                workload[t.responsable]++;
+        const response = await fetch('/admin/redistribute-tasks', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`
             }
         });
 
-        // 4. Distribuir
-        let assignedCount = 0;
-        const updates = [];
-
-        for (const task of pendingTasks) {
-            // Encontrar usuario con menor carga
-            let bestUser = null;
-            let minLoad = Infinity;
-
-            for (const [user, load] of Object.entries(workload)) {
-                if (load < minLoad) {
-                    minLoad = load;
-                    bestUser = user;
-                }
-            }
-
-            if (bestUser) {
-                updates.push(
-                    supabaseClient
-                        .from('tareas')
-                        .update({ responsable: bestUser })
-                        .eq('id', task.id)
-                );
-                workload[bestUser]++;
-                assignedCount++;
-            }
+        if (!response.ok) {
+            throw new Error('Error en la redistribución');
         }
 
-        // Ejecutar actualizaciones
-        await Promise.all(updates);
-
-        showToast('success', 'Distribución completada', `Se han asignado ${assignedCount} tareas automáticamente.`);
+        const data = await response.json();
+        showToast('success', 'Redistribución', data.message);
         
-        // Recargar vista actual si es relevante
-        const currentSection = document.querySelector('.content-section.active')?.id;
-        if (currentSection === 'workload') loadWorkloadStats();
-        if (currentSection === 'tasks') loadTasks();
-
+        // Recargar vista si estás en tareas o responsables
+        if (currentSection === 'tasks') {
+            loadTasks();
+        } else if (currentSection === 'admin') {
+            loadResponsibles();
+        }
     } catch (error) {
-        console.error('Error distributing workload:', error);
-        showToast('danger', 'Error', 'Error al distribuir carga: ' + error.message);
+        console.error('Error redistribuyendo tareas:', error);
+        showToast('danger', 'Error', 'Error al redistribuir tareas: ' + error.message);
     } finally {
         hideLoading();
     }
@@ -3595,8 +3507,21 @@ async function runDailyAutomations() {
             // 2. Archivar Finalizados
             await archivarFinalizados();
             
-            // 3. Redistribuir carga de usuarios ausentes
-            await redistributeTasksManual(); // Reutilizamos la lógica (sin confirmación visual automática, pero el endpoint es seguro)
+            // 3. Redistribuir carga de usuarios ausentes (NUEVO)
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session) {
+                const response = await fetch('/admin/redistribute-tasks', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${session.access_token}` }
+                });
+                if (response.ok) {
+                    const resData = await response.json();
+                    console.log('Redistribución automática:', resData);
+                    if (resData.redistributed > 0) {
+                        showToast('info', 'Automatización', `${resData.redistributed} tareas redistribuidas.`);
+                    }
+                }
+            }
             
             // Marcar como ejecutado hoy
             localStorage.setItem('gescon360_lastDailyRun', today);

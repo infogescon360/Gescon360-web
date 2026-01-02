@@ -1068,6 +1068,92 @@ app.put('/admin/users/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint para REDISTRIBUCIÓN AUTOMÁTICA de tareas (Expedientes)
+app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    
+    // Solo admins pueden redistribuir
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+      const appMeta = user.app_metadata || {};
+      if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
+        return res.status(403).json({ error: 'Solo administradores pueden redistribuir tareas' });
+      }
+    }
+
+    // 1. Obtener usuarios no disponibles (vacation, sick_leave, permit, inactive)
+    const { data: unavailableUsers, error: unavailError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, status')
+      .in('status', ['vacation', 'sick_leave', 'permit', 'inactive']);
+
+    if (unavailError) throw unavailError;
+
+    // 2. Obtener usuarios activos
+    const { data: activeUsers, error: activeError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name')
+      .eq('status', 'active')
+      .eq('role', 'user'); // Solo usuarios normales, no admins
+
+    if (activeError || !activeUsers || activeUsers.length === 0) {
+      return res.json({
+        ok: true,
+        message: 'No hay usuarios activos para redistribuir tareas',
+        redistributed: 0
+      });
+    }
+
+    let totalRedistributed = 0;
+    const redistribution = [];
+
+    // 3. Para cada usuario no disponible, redistribuir sus tareas
+    for (const unavailUser of unavailableUsers) {
+      // Obtener tareas pendientes del usuario no disponible
+      const { data: tasks, error: tasksError } = await supabaseAdmin
+        .from('expedientes')
+        .select('*')
+        .eq('gestor_id', unavailUser.id)
+        .in('estado', ['Pendiente', 'En proceso']);
+
+      if (tasksError || !tasks || tasks.length === 0) continue;
+
+      // Distribuir equitativamente entre usuarios activos
+      for (let i = 0; i < tasks.length; i++) {
+        const targetUser = activeUsers[i % activeUsers.length];
+        
+        const { error: updateError } = await supabaseAdmin
+          .from('expedientes')
+          .update({ gestor_id: targetUser.id })
+          .eq('id', tasks[i].id);
+
+        if (!updateError) {
+          totalRedistributed++;
+          redistribution.push({
+            taskId: tasks[i].id,
+            from: unavailUser.email,
+            to: targetUser.email
+          });
+        }
+      }
+    }
+
+    console.log(`✓ Redistribuidas ${totalRedistributed} tareas automáticamente`);
+
+    res.json({
+      ok: true,
+      message: `${totalRedistributed} tareas redistribuidas correctamente`,
+      redistributed: totalRedistributed,
+      details: redistribution
+    });
+
+  } catch (e) {
+    console.error('Error en redistribución automática:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint para REDISTRIBUIR tareas de usuarios no disponibles
 app.post('/admin/tasks/redistribute', requireAuth, async (req, res) => {
   try {
