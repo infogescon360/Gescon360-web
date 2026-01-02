@@ -778,54 +778,30 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     // Verificar que el usuario es admin
     const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
     if (!isSuperAdmin) {
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (profileError || !profile || profile.role !== 'admin') {
+      // Verificar en app_metadata en lugar de la tabla profiles
+      const appMeta = user.app_metadata || {};
+      if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
         return res.status(403).json({ error: 'Solo administradores pueden ver usuarios' });
       }
     }
 
-    // Usar supabaseAdmin para evitar errores RLS (500) al listar perfiles
-    // Intentamos primero con la tabla profiles
-    let profiles = [];
-    let profilesError = null;
+    // Usar SOLO Auth Admin API (que funciona sin problemas RLS)
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers({ 
+      page: 1, 
+      perPage: 1000 
+    });
     
-    try {
-      const { data, error } = await supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      profiles = data;
-    } catch (err) {
-      console.error('Error accediendo a tabla profiles (posible RLS recursion):', err.message);
-      profilesError = err;
-    }
-
-    // Si falla profiles (ej. RLS recursion), intentamos obtener usuarios desde Auth API
-    if (profilesError) {
-       console.log('Intentando fallback a Auth Admin API...');
-       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-       
-       if (authError) throw new Error(`Error crítico: ${profilesError.message} | Auth: ${authError.message}`);
-       
-       // Mapear usuarios de Auth a estructura de perfil
-       if (authData && authData.users) {
-         profiles = authData.users.map(u => ({
-           id: u.id,
-           email: u.email,
-           full_name: u.user_metadata?.full_name || u.email.split('@')[0],
-           role: u.app_metadata?.role || (u.app_metadata?.is_super_admin ? 'admin' : (u.user_metadata?.role || 'user')),
-           status: 'active',
-           created_at: u.created_at
-         }));
-       }
-    }
+    if (authError) throw new Error(`Auth Error: ${authError.message}`);
+    
+    // Mapear usuarios de Auth a estructura de perfil
+    const profiles = authData.users.map(u => ({
+      id: u.id,
+      email: u.email,
+      full_name: u.user_metadata?.full_name || u.email.split('@')[0],
+      role: u.app_metadata?.role || (u.app_metadata?.is_super_admin ? 'admin' : (u.user_metadata?.role || 'user')),
+      status: u.user_metadata?.status || 'active',
+      created_at: u.created_at
+    }));
     
     console.log('DEBUG: /admin/users GET - Devolviendo', profiles.length, 'usuarios');
     res.json(profiles);
