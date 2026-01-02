@@ -2066,13 +2066,24 @@ async function saveResponsible() {
     showLoading();
     try {
         if (id) {
-            // Update
-            const { error } = await supabaseClient
-                .from('profiles')
-                .update({ full_name: fullName, status, role })
-                .eq('id', id);
-            
-            if (error) throw error;
+            // Update - Usar backend para evitar error RLS
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (!session) throw new Error('No hay sesión activa');
+
+            const response = await fetch(`/admin/users/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ fullName, status, role })
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Error al actualizar responsable');
+            }
+
             showToast('success', 'Actualizado', 'Responsable actualizado correctamente');
         } else {
             // Create new user via backend
@@ -2217,12 +2228,17 @@ async function openReassignTasksModal() {
     showLoading();
     try {
         // Obtener usuarios para llenar los selectores
-        const { data: users, error } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .order('full_name');
-            
-        if (error) throw error;
+        // Usar /admin/users para obtener todos (activos e inactivos) sin error RLS
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const response = await fetch('/admin/users', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        
+        if (!response.ok) throw new Error('Error cargando usuarios');
+        const users = await response.json();
+        
+        // Ordenar por nombre
+        users.sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
         
         const optionsHtml = users.map(u => {
             const name = u.full_name || u.email;
@@ -2304,11 +2320,12 @@ async function loadWorkloadStats() {
     showLoading();
     try {
         // Usuarios activos
-        const { data: users, error: uError } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .eq('status', 'active');
-        if (uError) throw uError;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const response = await fetch('/api/responsables', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        if (!response.ok) throw new Error('Error cargando usuarios');
+        const users = await response.json();
 
         // Tareas
         const { data: tasks, error: tError } = await supabaseClient
@@ -3865,6 +3882,41 @@ function renderTaskPagination(totalTasks) {
     if (!paginationContainer) {
         paginationContainer = document.createElement('div');
         paginationContainer.id = 'taskPagination';
+        paginationContainer.className = 'd-flex justify-content-between align-items-center p-3 border-top';
+        tableContainer.appendChild(paginationContainer);
+    }
+    
+    const totalPages = Math.ceil(totalTasks / TASKS_PER_PAGE);
+    const startItem = totalTasks === 0 ? 0 : (currentTaskPage - 1) * TASKS_PER_PAGE + 1;
+    const endItem = Math.min(currentTaskPage * TASKS_PER_PAGE, totalTasks);
+    
+    paginationContainer.innerHTML = `
+        <div class="text-muted small">
+            Mostrando ${startItem}-${endItem} de ${totalTasks} tareas
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage - 1})" ${currentTaskPage <= 1 ? 'disabled' : ''}>
+                <i class="bi bi-chevron-left"></i> Anterior
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" disabled>
+                Página ${currentTaskPage} de ${totalPages || 1}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage + 1})" ${currentTaskPage >= totalPages ? 'disabled' : ''}>
+                Siguiente <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+function loadTasksPage(page) {
+    currentTaskPage = page;
+    loadTasks();
+}
+
+function searchTasks() {
+    currentTaskPage = 1;
+    loadTasks();
+}
         paginationContainer.className = 'd-flex justify-content-between align-items-center p-3 border-top';
         tableContainer.appendChild(paginationContainer);
     }
