@@ -1757,13 +1757,19 @@ async function saveUser() {
     showLoading();
     try {
         if (id) {
-            // Actualizar usuario existente (Solo perfil)
-            const { error } = await supabaseClient
-                .from('profiles')
-                .update({ full_name: fullName, role, status })
-                .eq('id', id);
-
-            if (error) throw error;
+            // Actualizar usuario existente usando el nuevo endpoint del backend
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            const response = await fetch(`/admin/users/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ fullName, role, status })
+            });
+            
+            if (!response.ok) throw new Error('Error al actualizar usuario');
+            
             showToast('success', 'Actualizado', 'Usuario actualizado correctamente');
         } else {
             // Crear nuevo usuario (Llamada al backend)
@@ -1955,6 +1961,13 @@ function renderResponsiblesTable(users, tasks = []) {
     const container = document.getElementById('responsiblesList');
     if (!container) return;
 
+    // Mapeo de estados para UI
+    const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
+    const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
+
+    // Botón de redistribución manual
+    const headerHtml = `<div class="d-flex justify-content-end mb-3"><button class="btn btn-outline-warning btn-sm" onclick="redistributeTasksManual()"><i class="bi bi-shuffle"></i> Redistribuir Carga de Ausentes</button></div>`;
+
     const stats = {};
     users.forEach(u => {
         const name = u.full_name || u.email;
@@ -1969,7 +1982,7 @@ function renderResponsiblesTable(users, tasks = []) {
         }
     });
 
-    container.innerHTML = '';
+    container.innerHTML = headerHtml;
     if (users.length === 0) {
         container.innerHTML = '<div class="alert alert-info">No hay responsables registrados.</div>';
         return;
@@ -1978,7 +1991,8 @@ function renderResponsiblesTable(users, tasks = []) {
     users.forEach(user => {
         const name = user.full_name || user.email;
         const userStats = stats[name] || { active: 0, completed: 0 };
-        const statusClass = user.status === 'active' ? 'bg-success text-white' : 'bg-secondary text-white';
+        const statusLabel = statusMap[user.status] || user.status;
+        const statusClass = classMap[user.status] || 'bg-secondary';
         
         const card = document.createElement('div');
         card.className = 'responsible-card';
@@ -1999,7 +2013,7 @@ function renderResponsiblesTable(users, tasks = []) {
                 </div>
             </div>
             <div class="responsible-status">
-                <span class="status-indicator ${statusClass}" style="padding: 4px 8px; border-radius: 4px;">${user.status}</span>
+                <span class="status-indicator ${statusClass} text-white" style="padding: 4px 8px; border-radius: 4px;">${statusLabel}</span>
             </div>
             <div class="row mt-3 text-center">
                 <div class="col-6">
@@ -2014,6 +2028,27 @@ function renderResponsiblesTable(users, tasks = []) {
         `;
         container.appendChild(card);
     });
+}
+
+async function redistributeTasksManual() {
+    if (!confirm('¿Redistribuir tareas pendientes de usuarios NO disponibles (Vacaciones, Baja, etc.) entre los activos?')) return;
+    showLoading();
+    try {
+        const session = await supabaseClient.auth.getSession();
+        const response = await fetch('/admin/tasks/redistribute', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        
+        showToast('success', 'Redistribución', result.message);
+        loadResponsibles(); // Recargar para ver cambios si los hubiera en contadores
+    } catch (e) {
+        showToast('danger', 'Error', e.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 function addResponsible() {
@@ -3559,6 +3594,9 @@ async function runDailyAutomations() {
             
             // 2. Archivar Finalizados
             await archivarFinalizados();
+            
+            // 3. Redistribuir carga de usuarios ausentes
+            await redistributeTasksManual(); // Reutilizamos la lógica (sin confirmación visual automática, pero el endpoint es seguro)
             
             // Marcar como ejecutado hoy
             localStorage.setItem('gescon360_lastDailyRun', today);

@@ -1017,6 +1017,102 @@ app.delete('/admin/users/:id', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint para ACTUALIZAR usuario (PUT) - Perfil y Estado
+app.put('/admin/users/:id', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const targetUserId = req.params.id;
+    const { fullName, role, status } = req.body;
+
+    // Verificar permisos
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+       const appMeta = user.app_metadata || {};
+       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
+         return res.status(403).json({ error: 'Solo administradores pueden editar usuarios' });
+       }
+    }
+
+    // 1. Actualizar Auth Metadata (para sincronizar status y nombre en /api/responsables)
+    const updates = {
+        user_metadata: {},
+        app_metadata: {}
+    };
+    if (fullName) updates.user_metadata.full_name = fullName;
+    if (status) updates.user_metadata.status = status;
+    if (role) updates.app_metadata.role = role;
+
+    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+        targetUserId,
+        updates
+    );
+    if (authError) throw new Error(`Auth update error: ${authError.message}`);
+
+    // 2. Actualizar Profile
+    const profileUpdates = {};
+    if (fullName) profileUpdates.full_name = fullName;
+    if (role) profileUpdates.role = role;
+    if (status) profileUpdates.status = status;
+
+    const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('id', targetUserId);
+
+    if (profileError) throw new Error(`Profile update error: ${profileError.message}`);
+
+    res.json({ message: 'Usuario actualizado correctamente' });
+  } catch (e) {
+    console.error('Error en PUT /admin/users/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint para REDISTRIBUIR tareas de usuarios no disponibles
+app.post('/admin/tasks/redistribute', requireAuth, async (req, res) => {
+  try {
+    // 1. Obtener usuarios NO DISPONIBLES
+    const { data: unavailableUsers, error: uError } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email')
+        .in('status', ['inactive', 'vacation', 'sick_leave', 'permit']);
+
+    if (uError) throw uError;
+    if (!unavailableUsers || unavailableUsers.length === 0) return res.json({ message: 'No hay usuarios no disponibles.' });
+
+    const unavailableNames = unavailableUsers.flatMap(u => [u.full_name, u.email]).filter(Boolean);
+
+    // 2. Obtener usuarios ACTIVOS
+    const { data: activeUsers, error: aError } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email')
+        .eq('status', 'active');
+
+    if (aError) throw aError;
+    if (!activeUsers || activeUsers.length === 0) return res.status(400).json({ error: 'No hay usuarios activos para recibir tareas.' });
+
+    // 3. Buscar y redistribuir tareas pendientes
+    const { data: tasks } = await supabaseAdmin
+        .from('tareas')
+        .select('id')
+        .in('responsable', unavailableNames)
+        .not('estado', 'in', '("Completada","Recobrado","Archivado","Rehusado NO cobertura")');
+
+    if (!tasks || tasks.length === 0) return res.json({ message: 'No hay tareas pendientes para redistribuir.' });
+
+    const updates = tasks.map((task, i) => {
+        const target = activeUsers[i % activeUsers.length];
+        return supabaseAdmin.from('tareas').update({ responsable: target.full_name || target.email }).eq('id', task.id);
+    });
+
+    await Promise.all(updates);
+    res.json({ success: true, message: `Se redistribuyeron ${tasks.length} tareas entre ${activeUsers.length} usuarios activos.` });
+  } catch (e) {
+    console.error('Error redistribuyendo:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint de utilidad para migrar roles de 'profiles' a 'app_metadata'
 app.post('/admin/migrate-roles', requireAuth, async (req, res) => {
   try {
