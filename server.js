@@ -51,6 +51,21 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   db: { schema: 'public' }
 });
 
+// Verificación de conectividad Admin al inicio
+(async () => {
+  try {
+    const { error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
+    if (error) {
+      console.error('❌ ERROR CRÍTICO DE CONFIGURACIÓN: La SUPABASE_SERVICE_ROLE_KEY es inválida o expiró.');
+      console.error('   Detalle del error:', error.message);
+    } else {
+      console.log('✅ Conexión Supabase Admin verificada correctamente.');
+    }
+  } catch (e) {
+    console.error('❌ Error al verificar conexión Admin:', e.message);
+  }
+})();
+
 // ---------------------------------------------------------------------
 // Helpers de autenticación / roles
 // ---------------------------------------------------------------------
