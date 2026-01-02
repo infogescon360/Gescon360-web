@@ -477,6 +477,47 @@ app.post('/api/archivados/:id/restaurar', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint optimizado para estadísticas del Dashboard (evita RLS y descarga masiva)
+app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Ejecutar consultas en paralelo para mejor rendimiento
+    const [totalRes, pendientesRes, enProcesoRes, urgentesRes] = await Promise.all([
+        // Total expedientes
+        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true }),
+        
+        // Pendientes
+        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true })
+            .in('estado', ['Pdte. revisión', 'Pendiente']),
+            
+        // En Proceso
+        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true })
+            .in('estado', ['En Proceso', 'En gestión']),
+            
+        // Vencimiento Hoy (Urgentes) - Excluye finalizados/archivados
+        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true })
+            .lte('fecha_seguimiento', today)
+            .not('estado', 'in', '("Completado","Archivado","Finalizado","Finalizado Parcial","Rehusado","Datos NO válidos")')
+    ]);
+
+    if (totalRes.error) throw totalRes.error;
+    if (pendientesRes.error) throw pendientesRes.error;
+    if (enProcesoRes.error) throw enProcesoRes.error;
+    if (urgentesRes.error) throw urgentesRes.error;
+
+    res.json({
+      total: totalRes.count || 0,
+      pendientes: pendientesRes.count || 0,
+      enProceso: enProcesoRes.count || 0,
+      vencimientoHoy: urgentesRes.count || 0
+    });
+  } catch (e) {
+    console.error('Error en /api/dashboard/stats:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/reportes/estadisticas', async (req, res) => {
   try {
     let queryTotal = supabase.from('expedientes').select('*', { count: 'exact', head: true });
