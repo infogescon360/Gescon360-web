@@ -3497,10 +3497,18 @@ async function loadReports() {
     console.log('Cargando reportes...');
     showLoading();
     try {
-        await Promise.all([
-            renderMonthlyChart(),
-            renderStatusChart()
-        ]);
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
+
+        const response = await fetch('/api/reports/charts', {
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+
+        if (!response.ok) throw new Error('Error al cargar datos de reportes');
+        const chartData = await response.json();
+
+        renderMonthlyChart(chartData.monthly);
+        renderStatusChart(chartData.status);
     } catch (error) {
         console.error('Error loading reports:', error);
         showToast('danger', 'Error', 'No se pudieron cargar los gráficos: ' + error.message);
@@ -3671,30 +3679,10 @@ async function archivarFinalizados() {
     }
 }
 
-async function renderMonthlyChart() {
+function renderMonthlyChart(stats) {
     const canvas = document.getElementById('monthlyChart');
-    if (!canvas) return;
+    if (!canvas || !stats) return;
     const ctx = canvas.getContext('2d');
-
-    // Obtener datos de expedientes
-    const { data: expedientes, error } = await supabaseClient
-        .from('expedientes')
-        .select('fecha_ocurrencia');
-
-    if (error) throw error;
-
-    // Procesar datos por mes (YYYY-MM)
-    const stats = {};
-    expedientes.forEach(exp => {
-        const dateStr = exp.fecha_ocurrencia || exp.created_at;
-        if (!dateStr) return;
-        
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return;
-        
-        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        stats[key] = (stats[key] || 0) + 1;
-    });
 
     // Ordenar cronológicamente
     const labels = Object.keys(stats).sort();
@@ -3729,19 +3717,10 @@ async function renderMonthlyChart() {
     });
 }
 
-async function renderStatusChart() {
+function renderStatusChart(stats) {
     const canvas = document.getElementById('statusChart');
-    if (!canvas) return;
+    if (!canvas || !stats) return;
     const ctx = canvas.getContext('2d');
-
-    const { data: expedientes, error } = await supabaseClient.from('expedientes').select('estado');
-    if (error) throw error;
-
-    const stats = {};
-    expedientes.forEach(exp => {
-        const status = exp.estado || 'Sin estado';
-        stats[status] = (stats[status] || 0) + 1;
-    });
 
     if (statusChartInstance) statusChartInstance.destroy();
 

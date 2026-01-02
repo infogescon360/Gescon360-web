@@ -518,6 +518,45 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint para datos de GRÁFICOS (Reportes) - Optimizado
+app.get('/api/reports/charts', requireAuth, async (req, res) => {
+  try {
+    // Optimización: Seleccionar solo columnas necesarias para agrupar
+    const { data: expedientes, error } = await supabaseAdmin
+      .from('expedientes')
+      .select('estado, fecha_ocurrencia, created_at');
+
+    if (error) throw error;
+
+    const statusStats = {};
+    const monthlyStats = {};
+
+    expedientes.forEach(exp => {
+      // Status
+      const status = exp.estado || 'Sin estado';
+      statusStats[status] = (statusStats[status] || 0) + 1;
+
+      // Monthly
+      const dateStr = exp.fecha_ocurrencia || exp.created_at;
+      if (dateStr) {
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime())) {
+          const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          monthlyStats[key] = (monthlyStats[key] || 0) + 1;
+        }
+      }
+    });
+
+    res.json({
+      status: statusStats,
+      monthly: monthlyStats
+    });
+  } catch (e) {
+    console.error('Error en /api/reports/charts:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/reportes/estadisticas', async (req, res) => {
   try {
     let queryTotal = supabase.from('expedientes').select('*', { count: 'exact', head: true });
