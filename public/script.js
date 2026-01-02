@@ -3883,39 +3883,3 @@ function loadTasksPage(page) {
 function searchTasks() {
     currentTaskPage = 1;
     loadTasks();
-}
-        paginationContainer.className = 'd-flex justify-content-between align-items-center p-3 border-top';
-        tableContainer.appendChild(paginationContainer);
-    }
-    
-    const totalPages = Math.ceil(totalTasks / TASKS_PER_PAGE);
-    const startItem = totalTasks === 0 ? 0 : (currentTaskPage - 1) * TASKS_PER_PAGE + 1;
-    const endItem = Math.min(currentTaskPage * TASKS_PER_PAGE, totalTasks);
-    
-    paginationContainer.innerHTML = `
-        <div class="text-muted small">
-            Mostrando ${startItem}-${endItem} de ${totalTasks} tareas
-        </div>
-        <div class="btn-group">
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage - 1})" ${currentTaskPage <= 1 ? 'disabled' : ''}>
-                <i class="bi bi-chevron-left"></i> Anterior
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" disabled>
-                Página ${currentTaskPage} de ${totalPages || 1}
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage + 1})" ${currentTaskPage >= totalPages ? 'disabled' : ''}>
-                Siguiente <i class="bi bi-chevron-right"></i>
-            </button>
-        </div>
-    `;
-}
-
-function loadTasksPage(page) {
-    currentTaskPage = page;
-    loadTasks();
-}
-
-function searchTasks() {
-    currentTaskPage = 1;
-    loadTasks();
-}
