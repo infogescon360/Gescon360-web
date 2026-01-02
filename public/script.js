@@ -1504,6 +1504,7 @@ function applyTaskFilters() {
         estado: document.getElementById('filterTaskStatus').value,
         prioridad: document.getElementById('filterTaskPriority').value
     };
+    currentTaskPage = 1; // Resetear paginación al filtrar
     closeModal('filterTasksModal');
     loadTasks();
     showToast('info', 'Filtros aplicados', 'Lista de tareas actualizada.');
@@ -1511,6 +1512,7 @@ function applyTaskFilters() {
 
 function clearTaskFilters() {
     activeTaskFilters = {};
+    currentTaskPage = 1; // Resetear paginación al limpiar
     closeModal('filterTasksModal');
     loadTasks();
     showToast('info', 'Filtros limpiados', 'Se muestran todas las tareas.');
@@ -3878,6 +3880,88 @@ function renderTaskPagination(totalTasks) {
 function loadTasksPage(page) {
     currentTaskPage = page;
     loadTasks();
+}
+
+async function exportTasksToExcel() {
+    console.log('Exporting tasks...');
+    showLoading();
+
+    try {
+        // 1. Replicar la query de loadTasks (sin paginación)
+        let query = supabaseClient
+            .from('tareas')
+            .select('*');
+        
+        // FILTRO POR ROL
+        if (currentUser && !currentUser.isAdmin) {
+            query = query.or(`responsable.eq.${currentUser.name},responsable.eq.${currentUser.email}`);
+        }
+        
+        // Aplicar filtros activos
+        if (activeTaskFilters.responsable) query = query.eq('responsable', activeTaskFilters.responsable);
+        if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
+        if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
+        
+        // Filtro de búsqueda
+        const searchInput = document.getElementById('taskSearchInput');
+        const searchTerm = searchInput ? searchInput.value.trim() : '';
+        
+        if (searchTerm) {
+             let sgrSiniestros = [];
+            const { data: sgrMatches } = await supabaseClient
+                .from('expedientes')
+                .select('num_siniestro')
+                .ilike('num_sgr', `%${searchTerm}%`)
+                .limit(20);
+                
+            if (sgrMatches && sgrMatches.length > 0) {
+                sgrSiniestros = sgrMatches.map(e => e.num_siniestro);
+            }
+
+            let orConditions = [`num_siniestro.ilike.%${searchTerm}%`, `descripcion.ilike.%${searchTerm}%`];
+            if (sgrSiniestros.length > 0) {
+                sgrSiniestros.forEach(sin => orConditions.push(`num_siniestro.eq.${sin}`));
+            }
+            
+            query = query.or(orConditions.join(','));
+        }
+
+        const { data: tasks, error } = await query.order('fecha_limite', { ascending: true });
+
+        if (error) throw error;
+
+        if (!tasks || tasks.length === 0) {
+            showToast('warning', 'Sin datos', 'No hay tareas para exportar con los filtros actuales.');
+            return;
+        }
+
+        // Preparar datos para Excel
+        const exportData = tasks.map(t => ({
+            'Nº Siniestro': t.num_siniestro || '',
+            'Descripción': t.descripcion || '',
+            'Responsable': t.responsable || '',
+            'Estado': t.estado || '',
+            'Prioridad': t.prioridad || '',
+            'Fecha Límite': t.fecha_limite ? new Date(t.fecha_limite).toLocaleDateString() : '',
+            'Importe Recobrado': t.importe_recobrado || 0
+        }));
+
+        // Generar Excel
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Tareas");
+
+        const fileName = `Tareas_Gescon360_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+
+        showToast('success', 'Exportado', 'Tareas exportadas correctamente.');
+
+    } catch (error) {
+        console.error('Error exporting tasks:', error);
+        showToast('danger', 'Error', 'Error al exportar tareas: ' + error.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 function searchTasks() {
