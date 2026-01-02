@@ -93,6 +93,8 @@ async function isUserAdmin(userId) {
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`isUserAdmin falló para ${userId}:`, response.status, errorText);
     throw new Error('No se pudo verificar el usuario');
   }
 
@@ -862,6 +864,7 @@ app.post('/admin/users', async (req, res) => {
       user = await getUserFromToken(token);
       console.log('DEBUG: /admin/users - User ID:', user.id, 'Email:', user.email);
     } catch (e) {
+      console.error('DEBUG: getUserFromToken falló:', e.message);
       return res.status(401).json({ error: 'Sesión no válida' });
     }
 
@@ -875,7 +878,7 @@ app.post('/admin/users', async (req, res) => {
         .eq('id', user.id)
         .maybeSingle();
 
-      console.log('DEBUG: /admin/users - Profile check:', { userId: user.id, profileFound: !!profile, role: profile?.role, error: profileError });
+      console.log('DEBUG: /admin/users - Profile check:', { userId: user.id, profileFound: !!profile, role: profile?.role, error: profileError?.message });
 
       if (profileError || !profile || profile.role !== 'admin') {
         return res.status(403).json({ error: 'Solo administradores pueden crear usuarios' });
@@ -897,6 +900,7 @@ app.post('/admin/users', async (req, res) => {
 
     const tempPassword = generateStrongPassword();
 
+    console.log('DEBUG: Intentando crear usuario con service_role...');
     const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: tempPassword,
@@ -910,6 +914,8 @@ app.post('/admin/users', async (req, res) => {
     });
 
     if (createError) {
+      console.error('DEBUG: createUser falló:', createError.message, createError.status);
+      
       // Si el usuario ya existe, intentamos recuperar su perfil o crearlo
       if (createError.message?.includes('already registered') || createError.status === 422) {
          const { data: { users: authUsers }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
@@ -934,11 +940,11 @@ app.post('/admin/users', async (req, res) => {
              }
          }
       }
-      console.error('Error creando usuario en Auth:', createError);
       return res.status(500).json({ error: `No se pudo crear el usuario en Supabase Auth: ${createError.message}` });
     }
 
     const userId = createdUser.user?.id;
+    console.log('DEBUG: Usuario creado en Auth con ID:', userId);
 
     const { error: profileUpsertError } = await supabaseAdmin
       .from('profiles')
