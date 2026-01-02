@@ -993,21 +993,24 @@ app.delete('/admin/users/:id', requireAuth, async (req, res) => {
 
     console.log(`DEBUG: Eliminando usuario ${targetUserId} solicitado por ${user.email}`);
 
-    // 1. Eliminar de Auth (Esto es lo principal)
-    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
-    
-    if (deleteAuthError) {
-      throw new Error(`Error eliminando usuario de Auth: ${deleteAuthError.message}`);
-    }
+    // 1. Desvincular expedientes (gestor_id) para evitar errores de integridad referencial
+    await supabaseAdmin.from('expedientes').update({ gestor_id: null }).eq('gestor_id', targetUserId);
 
-    // 2. Eliminar de profiles (por si acaso no hay cascade configurado en BD)
+    // 2. Eliminar de profiles PRIMERO (para evitar error de FK si no hay CASCADE en auth.users)
     const { error: deleteProfileError } = await supabaseAdmin
         .from('profiles')
         .delete()
         .eq('id', targetUserId);
 
     if (deleteProfileError) {
-        console.warn('Aviso: Error al eliminar perfil (posiblemente ya eliminado por cascade):', deleteProfileError.message);
+        console.warn('Aviso: Error al eliminar perfil (posiblemente dependencias o ya eliminado):', deleteProfileError.message);
+    }
+
+    // 3. Eliminar de Auth (Supabase Auth)
+    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
+    
+    if (deleteAuthError) {
+      throw new Error(`Error eliminando usuario de Auth: ${deleteAuthError.message}`);
     }
 
     res.json({ message: 'Usuario eliminado correctamente' });
