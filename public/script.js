@@ -1925,31 +1925,6 @@ async function saveResponsible() {
     }
 }
 
-async function loadResponsibles() {
-    console.log('Cargando responsables...');
-    const container = document.getElementById('responsiblesList');
-    if (!container) return;
-
-    showLoading();
-    try {
-        // Fetch profiles via backend (seguro)
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No hay sesión activa');
-
-        const response = await fetch('/admin/users', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        if (!response.ok) throw new Error('Error cargando responsables');
-        const users = await response.json();
-
-        // Fetch task counts
-        let tasks = [];
-        try {
-            const { data, error: tError } = await supabaseClient
-                .from('tareas')
-                .select('responsable, estado');
-            if (tError) throw tError;
-            tasks = data || [];
         } catch (e) {
             console.warn('No se pudieron cargar las tareas para estadísticas (posible error RLS):', e);
             // Continuamos sin tareas para no bloquear la lista de usuarios
