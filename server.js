@@ -972,6 +972,51 @@ app.post('/admin/users', async (req, res) => {
   }
 });
 
+// Endpoint para ELIMINAR usuario (DELETE)
+app.delete('/admin/users/:id', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const targetUserId = req.params.id;
+
+    // Verificar que el usuario es admin
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+      const appMeta = user.app_metadata || {};
+      if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
+        return res.status(403).json({ error: 'Solo administradores pueden eliminar usuarios' });
+      }
+    }
+
+    if (user.id === targetUserId) {
+      return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta' });
+    }
+
+    console.log(`DEBUG: Eliminando usuario ${targetUserId} solicitado por ${user.email}`);
+
+    // 1. Eliminar de Auth (Esto es lo principal)
+    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
+    
+    if (deleteAuthError) {
+      throw new Error(`Error eliminando usuario de Auth: ${deleteAuthError.message}`);
+    }
+
+    // 2. Eliminar de profiles (por si acaso no hay cascade configurado en BD)
+    const { error: deleteProfileError } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('id', targetUserId);
+
+    if (deleteProfileError) {
+        console.warn('Aviso: Error al eliminar perfil (posiblemente ya eliminado por cascade):', deleteProfileError.message);
+    }
+
+    res.json({ message: 'Usuario eliminado correctamente' });
+  } catch (e) {
+    console.error('Error en DELETE /admin/users:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint de utilidad para migrar roles de 'profiles' a 'app_metadata'
 app.post('/admin/migrate-roles', requireAuth, async (req, res) => {
   try {

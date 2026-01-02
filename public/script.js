@@ -1884,14 +1884,22 @@ async function deleteUser(id) {
 
     showLoading();
     try {
-        // Nota: Eliminar de 'profiles' suele ser suficiente si hay trigger en BD, 
-        // pero idealmente se debería llamar a un endpoint de admin para borrar de Auth.
-        const { error } = await supabaseClient
-            .from('profiles')
-            .delete()
-            .eq('id', id);
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) {
+            throw new Error('No hay sesión activa');
+        }
 
-        if (error) throw error;
+        const response = await fetch(`/admin/users/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${session.data.session.access_token}`
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Error al eliminar usuario');
+        }
 
         showToast('success', 'Eliminado', 'Usuario eliminado correctamente');
         loadUsers();
