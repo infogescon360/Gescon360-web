@@ -770,6 +770,44 @@ app.post('/api/expedientes/:id/seguimientos', async (req, res) => {
 // ============================================================================
 // ADMIN: CREACIÓN DE USUARIOS
 // ============================================================================
+// ============================================================================
+// API: RESPONSABLES (GESTORES)
+// ============================================================================
+// Endpoint para obtener lista de responsables (gestores) para dropdowns
+// Accesible para usuarios autenticados (no requiere ser admin)
+app.get('/api/responsables', requireAuth, async (req, res) => {
+  try {
+    console.log('DEBUG: /api/responsables - Solicitado por:', req.user?.email);
+    
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers({ 
+      page: 1, 
+      perPage: 1000 
+    });
+    
+    if (authError) {
+      console.error('Error obteniendo usuarios de Auth:', authError);
+      throw new Error(`Auth Error: ${authError.message}`);
+    }
+    
+    // Mapear solo campos necesarios para dropdowns/selects
+    const responsables = authData.users
+      .map(u => ({
+        id: u.id,
+        full_name: u.user_metadata?.full_name || u.email.split('@')[0],
+        email: u.email,
+        status: u.user_metadata?.status || 'active'
+      }))
+      .filter(u => u.status === 'active')
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    
+    console.log('DEBUG: /api/responsables - Devolviendo', responsables.length, 'responsables');
+    res.json(responsables);
+  } catch (e) {
+    console.error('Error en GET /api/responsables:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint para OBTENER todos los usuarios (GET)
 app.get('/admin/users', requireAuth, async (req, res) => {
   try {
@@ -1170,6 +1208,7 @@ app.listen(PORT, () => {
   console.log('   POST /admin/set-admin');
   console.log('   GET  /admin/check');
   console.log('   POST /admin/users');
+  console.log('   GET  /api/responsables');
   console.log('');
   console.log('  EXPEDIENTES:');
   console.log('   GET    /api/expedientes');
