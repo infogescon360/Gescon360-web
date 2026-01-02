@@ -166,20 +166,17 @@ app.post('/api/login', async (req, res) => {
       console.error('Error obteniendo perfil:', profileError);
     }
 
-    const role = profile?.role || 'user';
+    // Priorizar app_metadata.role para coherencia con el sistema de permisos
+    const appMeta = user.app_metadata || {};
+    const role = appMeta.role || profile?.role || 'user';
     const status = profile?.status || 'active';
 
     if (status !== 'active') {
       return res.status(403).json({ error: 'Usuario inactivo o bloqueado' });
     }
 
-    let esSuperAdmin = false;
-    try {
-      const adminInfo = await isUserAdmin(userId);
-      esSuperAdmin = adminInfo === true;
-    } catch (e) {
-      esSuperAdmin = false;
-    }
+    // Verificar admin usando app_metadata (consistente con isUserAdmin)
+    const esSuperAdmin = appMeta.role === 'admin' || appMeta.is_super_admin === true;
 
     return res.json({
       ok: true,
@@ -937,6 +934,42 @@ app.post('/admin/users', async (req, res) => {
   } catch (e) {
     console.error('Error en /admin/users:', e);
     return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Endpoint de utilidad para migrar roles de 'profiles' a 'app_metadata'
+app.post('/admin/migrate-roles', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    // Protección extra: solo el super admin principal puede ejecutar esto
+    if (user.email !== 'jesus.mp@gescon360.es') {
+      return res.status(403).json({ error: 'Acceso denegado. Solo super admin.' });
+    }
+
+    // 1. Obtener todos los perfiles que tienen rol
+    const { data: profiles, error: profilesError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, role');
+
+    if (profilesError) throw new Error(profilesError.message);
+
+    const stats = { total: profiles.length, updated: 0, errors: [] };
+
+    // 2. Actualizar cada usuario en Auth
+    for (const p of profiles) {
+      if (!p.role) continue;
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        p.id,
+        { app_metadata: { role: p.role } }
+      );
+      
+      if (updateError) stats.errors.push({ id: p.id, error: updateError.message });
+      else stats.updated++;
+    }
+
+    res.json({ message: 'Migración finalizada', stats });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
