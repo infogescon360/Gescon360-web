@@ -993,10 +993,26 @@ app.delete('/admin/users/:id', requireAuth, async (req, res) => {
 
     console.log(`DEBUG: Eliminando usuario ${targetUserId} solicitado por ${user.email}`);
 
+    // 0. Obtener datos del perfil antes de borrar (para limpiar tareas por nombre/email)
+    const { data: targetProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', targetUserId)
+        .single();
+
     // 1. Desvincular expedientes (gestor_id) para evitar errores de integridad referencial
     await supabaseAdmin.from('expedientes').update({ gestor_id: null }).eq('gestor_id', targetUserId);
 
-    // 2. Eliminar de profiles PRIMERO (para evitar error de FK si no hay CASCADE en auth.users)
+    // 2. Desvincular seguimientos (usuario_id)
+    await supabaseAdmin.from('seguimientos').update({ usuario_id: null }).eq('usuario_id', targetUserId);
+
+    // 3. Desvincular tareas (responsable es texto: nombre o email)
+    if (targetProfile) {
+        if (targetProfile.full_name) await supabaseAdmin.from('tareas').update({ responsable: null }).eq('responsable', targetProfile.full_name);
+        if (targetProfile.email) await supabaseAdmin.from('tareas').update({ responsable: null }).eq('responsable', targetProfile.email);
+    }
+
+    // 4. Eliminar de profiles PRIMERO (para evitar error de FK si no hay CASCADE en auth.users)
     const { error: deleteProfileError } = await supabaseAdmin
         .from('profiles')
         .delete()
@@ -1006,7 +1022,7 @@ app.delete('/admin/users/:id', requireAuth, async (req, res) => {
         console.warn('Aviso: Error al eliminar perfil (posiblemente dependencias o ya eliminado):', deleteProfileError.message);
     }
 
-    // 3. Eliminar de Auth (Supabase Auth)
+    // 5. Eliminar de Auth (Supabase Auth)
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
     
     if (deleteAuthError) {
