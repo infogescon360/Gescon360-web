@@ -2921,7 +2921,7 @@ async function importarExpedientes() {
             return;
         }
         
-        const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar);
+        const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar, file.name);
 
         // Verificar referencia generada (si la DB tiene trigger/columna generada)
         if (resultado.expedientes && resultado.expedientes.length > 0) {
@@ -2929,12 +2929,12 @@ async function importarExpedientes() {
         }
 
         // REGISTRAR IMPORTACIÓN (LOG)
-        await saveImportLog({
-            fileName: file.name,
-            totalRecords: data.length,
-            duplicates: duplicadosEncontrados.length,
-            status: 'Completado'
-        });
+        // El log ahora se guarda en el backend al llamar a insertarExpedientesEnSupabase
+        // Si hubo duplicados detectados en el cliente, podríamos querer actualizar ese log, 
+        // pero por simplicidad dejamos que el backend registre lo que procesó.
+        // Opcional: Si quieres registrar los duplicados detectados en cliente, 
+        // podrías hacer una llamada extra o incluirlos en la llamada al backend.
+        // Por ahora, confiamos en el log del backend para los insertados.
 
         // PASO 4: Distribuir Tareas si está activado
         // REACTIVADO para cumplir con la lógica de "Pdte. revisión" y asignación equitativa específica
@@ -3360,21 +3360,33 @@ function normalizarExpediente(row, fileName, index) {
 }
 
 // Función para insertar expedientes en Supabase
-async function insertarExpedientesEnSupabase(expedientes) {
+async function insertarExpedientesEnSupabase(expedientes, fileName) {
     try {
-        const { data, error } = await supabaseClient
-            .from('expedientes')
-            .insert(expedientes)
-            .select();
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
 
-        if (error) throw error;
+        const response = await fetch('/api/expedientes/importar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.data.session.access_token}`
+            },
+            body: JSON.stringify({ expedientes, fileName })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Error en el servidor al importar');
+        }
+
+        const resultados = await response.json();
 
         return {
-            insertados: data.length,
-            expedientes: data
+            insertados: resultados.exitosos.length,
+            expedientes: resultados.exitosos
         };
     } catch (error) {
-        throw new Error('Error al insertar en base de datos: ' + error.message);
+        throw new Error('Error al importar expedientes: ' + error.message);
     }
 }
 
@@ -3860,8 +3872,13 @@ function renderTaskPagination(totalTasks) {
     const endItem = Math.min(currentTaskPage * TASKS_PER_PAGE, totalTasks);
     
     paginationContainer.innerHTML = `
-        <div class="text-muted small">
-            Mostrando ${startItem}-${endItem} de ${totalTasks} tareas
+        <div class="d-flex align-items-center">
+            <div class="text-muted small me-3">
+                Mostrando ${startItem}-${endItem} de ${totalTasks} tareas
+            </div>
+            <button class="btn btn-sm btn-outline-success" onclick="exportTasksToExcel()" title="Exportar tareas filtradas a Excel">
+                <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+            </button>
         </div>
         <div class="btn-group">
             <button class="btn btn-sm btn-outline-secondary" onclick="loadTasksPage(${currentTaskPage - 1})" ${currentTaskPage <= 1 ? 'disabled' : ''}>
@@ -3967,3 +3984,4 @@ async function exportTasksToExcel() {
 function searchTasks() {
     currentTaskPage = 1;
     loadTasks();
+}

@@ -590,7 +590,7 @@ app.get('/api/reportes/estadisticas', async (req, res) => {
 
 app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
   try {
-    const { expedientes, opciones } = req.body;
+    const { expedientes, opciones, fileName } = req.body;
     
     if (!Array.isArray(expedientes)) {
       return res.status(400).json({ error: 'Se requiere un array de expedientes' });
@@ -631,6 +631,17 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
           error: err.message
         });
       }
+    }
+    
+    // Registrar log de importación en el servidor
+    if (fileName) {
+      await supabaseAdmin.from('import_logs').insert({
+        file_name: fileName,
+        total_records: expedientes.length,
+        duplicates_count: resultados.duplicados.length, // Duplicados detectados por el backend
+        status: resultados.errores.length > 0 ? 'Con Errores' : 'Completado',
+        created_at: new Date().toISOString()
+      });
     }
     
     res.json(resultados);
