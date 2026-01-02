@@ -2118,8 +2118,23 @@ async function deleteResponsible(id) {
     if (!confirm('¿Eliminar este responsable?')) return;
     showLoading();
     try {
-        const { error } = await supabaseClient.from('profiles').delete().eq('id', id);
-        if (error) throw error;
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) {
+            throw new Error('No hay sesión activa');
+        }
+
+        const response = await fetch(`/admin/users/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${session.data.session.access_token}`
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Error al eliminar responsable');
+        }
+
         showToast('success', 'Eliminado', 'Responsable eliminado');
         loadResponsibles();
     } catch (error) {
