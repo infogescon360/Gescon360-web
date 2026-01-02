@@ -620,9 +620,6 @@ async function logout() {
     }
 }
 
-// Función registerFirstUser eliminada por razones de seguridad (duplicada e insegura).
-// Use la versión segura définie arriba o cree usuarios admin mediante el backend.
-
 // ============================================================================
 // FUNCIONES DE NAVEGACIÓN E INTERACCIÓN DE LA UI (AÑADIDAS PARA CORREGIR ERRORES)
 // ============================================================================
@@ -1904,6 +1901,111 @@ async function deleteUser(id) {
     } finally {
         hideLoading();
     }
+}
+
+async function loadResponsibles() {
+    console.log('Cargando responsables...');
+    showLoading();
+    try {
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) {
+            throw new Error('No hay sesión activa');
+        }
+
+        const response = await fetch('/api/responsables', {
+            headers: {
+                'Authorization': `Bearer ${session.data.session.access_token}`
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Error al cargar responsables');
+        }
+
+        const users = await response.json();
+        usersData = users;
+
+        let tasks = [];
+        try {
+            const { data: t } = await supabaseClient.from('tareas').select('responsable, estado');
+            tasks = t || [];
+        } catch (e) {
+            console.warn('No se pudieron cargar las tareas para estadísticas:', e);
+        }
+
+        renderResponsiblesTable(users, tasks);
+    } catch (error) {
+        console.error('Error loading responsibles:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderResponsiblesTable(users, tasks = []) {
+    const container = document.getElementById('responsiblesList');
+    if (!container) return;
+
+    const stats = {};
+    users.forEach(u => {
+        const name = u.full_name || u.email;
+        stats[name] = { active: 0, completed: 0 };
+    });
+
+    tasks.forEach(t => {
+        if (t.responsable && stats[t.responsable]) {
+            const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura'].includes(t.estado);
+            if (isCompleted) stats[t.responsable].completed++;
+            else stats[t.responsable].active++;
+        }
+    });
+
+    container.innerHTML = '';
+    if (users.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">No hay responsables registrados.</div>';
+        return;
+    }
+
+    users.forEach(user => {
+        const name = user.full_name || user.email;
+        const userStats = stats[name] || { active: 0, completed: 0 };
+        const statusClass = user.status === 'active' ? 'bg-success text-white' : 'bg-secondary text-white';
+        
+        const card = document.createElement('div');
+        card.className = 'responsible-card';
+        card.innerHTML = `
+            <div class="responsible-header">
+                <div>
+                    <div class="responsible-name">${name}</div>
+                    <div class="responsible-email">${user.email}</div>
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="editResponsible('${user.id}')">Editar</a></li>
+                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteResponsible('${user.id}')">Eliminar</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="responsible-status">
+                <span class="status-indicator ${statusClass}" style="padding: 4px 8px; border-radius: 4px;">${user.status}</span>
+            </div>
+            <div class="row mt-3 text-center">
+                <div class="col-6">
+                    <h3>${userStats.active}</h3>
+                    <small class="text-muted">Tareas Activas</small>
+                </div>
+                <div class="col-6">
+                    <h3>${userStats.completed}</h3>
+                    <small class="text-muted">Completadas</small>
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
 }
 
 function addResponsible() {
@@ -3277,270 +3379,6 @@ function openDatePicker(element, id) {
     showToast('info', 'En desarrollo', 'El selector de fecha estará disponible próximamente.');
 }
 
-
-// ============================================================================
-// CONTROL DE ACCESO Y ROLES (ROLE-BASED ACCESS CONTROL - RBAC)
-// ============================================================================
-
-// Constantes
-const ADMIN_EMAIL = 'jesus.mp@gescon360.es';
-const ADMIN_ROLE = 'admin';
-const USER_ROLE = 'user';
-
-// Verificar si usuario actual es admin
-// Verificar si usuario actual es admin
-function isCurrentUserAdmin() {
-    if (!currentUser) return false;
-    return currentUser.isAdmin === true;
-}
-
-// Verificar permiso para operación de seguridad
-function checkSecurityPermission(requiredRole = ADMIN_ROLE) {
-    if (!currentUser) {
-        showToast('danger', 'Error', 'No estás autenticado');
-        return false;
-    }
-
-    if (requiredRole === ADMIN_ROLE && !isCurrentUserAdmin()) {
-        showToast('danger', 'Acceso Denegado', 'Solo administradores pueden realizar esta acción');
-        console.warn(`Acceso denegado para ${currentUser.email}: se requiere rol ${requiredRole}`);
-        return false;
-    }
-
-    return true;
-}
-
-// Ocultar elementos de seguridad para usuarios no-admin
-function enforceSecurityUIRestrictions() {
-    const securityTable = document.getElementById('securityTable');
-    const addUserBtn = document.getElementById('addUserSecurityBtn');
-
-    if (securityTable) {
-        if (isCurrentUserAdmin()) {
-            securityTable.style.display = 'table';
-        } else {
-            securityTable.style.display = 'none';
-        }
-    }
-
-    if (addUserBtn) {
-        if (isCurrentUserAdmin()) {
-            addUserBtn.style.display = 'block';
-        } else {
-            addUserBtn.style.display = 'none';
-        }
-    }
-}
-
-// Generar contraseña temporal fuerte
-function generateTemporaryPassword() {
-    const length = 12;
-    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-    let password = '';
-    for (let i = 0; i < length; i++) {
-        password += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
-    return password;
-}
-
-// TABLA DE SEGURIDAD Y ACCESO - GESTIÓN DE USUARIOS Y PERMISOS
-// ============================================================================
-
-// Load security and access management table
-async function loadSecurityTable() {
-    // Check permission to load security table
-    if (!checkSecurityPermission()) return;
-    console.log('Loading Security Table...');
-    showLoading();
-
-    try {
-        // Fetch all users from Supabase
-        const { data: users, error } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        usersData = users || [];
-        renderSecurityTable();
-        setupSecurityTableEventListeners();
-
-    } catch (error) {
-        console.error('Error loading security table:', error);
-        showToast('danger', 'Error', 'No se pudo cargar la tabla de seguridad: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-// Render security table in the UI
-function renderSecurityTable() {
-    const tbody = document.querySelector('#securityTable tbody');
-    if (!tbody) {
-        console.warn('Security table tbody not found');
-        return;
-    }
-
-    tbody.innerHTML = '';
-
-    if (usersData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay usuarios registrados</td></tr>';
-        return;
-    }
-
-    usersData.forEach(user => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${user.id || 'N/A'}</td>
-            <td>${user.full_name || user.email.split('@')[0]}</td>
-            <td>${user.email}</td>
-            <td><span class="badge badge-${user.role === 'admin' ? 'danger' : 'info'}">${user.role || 'user'}</span></td>
-            <td><span class="badge badge-${user.status === 'active' ? 'success' : 'secondary'}">${user.status || 'inactive'}</span></td>
-            <td>
-                <button class="btn btn-sm btn-warning" onclick="editUserSecurity('${user.id}')">Editar</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteUserSecurity('${user.id}')">Eliminar</button>
-            </td>
-        `;
-        tbody.appendChild(row);
-    });
-
-    // Enforce UI restrictions based on user role
-    enforceSecurityUIRestrictions();
-}
-
-// Setup event listeners for security table
-function setupSecurityTableEventListeners() {
-    const addUserBtn = document.getElementById('addUserSecurityBtn');
-    if (addUserBtn) {
-        addUserBtn.addEventListener('click', showAddUserDialog);
-    }
-}
-
-// Show dialog to add new user
-function showAddUserDialog() {
-    const name = prompt('Nombre completo del usuario:');
-    if (!name) return;
-
-    const email = prompt('Correo electrónico (debe ser @gescon360.es):');
-    if (!email) return;
-
-    if (!email.endsWith('@gescon360.es')) {
-        showToast('danger', 'Error', 'El dominio debe ser @gescon360.es');
-        return;
-    }
-
-    const role = confirm('¿Es administrador? (Aceptar para Admin, Cancelar para Usuario)');
-    createSecurityUser({ fullName: name, email, role: role ? 'admin' : 'user' });
-}
-
-// Crear usuario de seguridad llamando al backend
-async function createSecurityUser({ fullName, email, role }) {
-    try {
-        // Verificar sesión y obtener token
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) {
-            showToast('danger', 'Sesión no válida', 'Debes iniciar sesión de nuevo');
-            return;
-        }
-
-        showToast('info', 'Creando usuario', `Creando usuario ${email} con rol ${role}...`);
-
-        const response = await fetch('/admin/users', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify({ fullName, email, role })
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || 'Error al crear usuario');
-        }
-
-        // Mostrar contraseña temporal al admin
-        const tempPasswordMsg = `Usuario: ${result.email}\nRol: ${result.role}\nContraseña temporal: ${result.tempPassword}`;
-        console.log('Nuevo usuario creado:', tempPasswordMsg);
-        alert('Usuario creado correctamente.\n\n' + tempPasswordMsg + '\n\nIMPORTANTE: Guarda esta contraseña.');
-
-        showToast('success', 'Usuario creado', `Se ha creado el usuario ${result.email}`);
-
-        // Recargar tabla de seguridad para ver el nuevo usuario
-        await loadSecurityTable();
-    } catch (error) {
-        console.error('Error creando usuario de seguridad:', error);
-        showToast('danger', 'Error', error.message || 'Error al crear usuario');
-    }
-}
-
-// Edit user
-async function editUserSecurity(userId) {
-    // Check permission to edit users
-    if (!checkSecurityPermission()) return;
-    const user = usersData.find(u => u.id === userId);
-    if (!user) return;
-
-    const newRole = confirm(`Cambiar rol de ${user.email}? (Aceptar para Admin, Cancelar para Usuario)`);
-    const newStatus = confirm(`¿Activar usuario? (Aceptar para Activo, Cancelar para Inactivo)`);
-
-    showLoading();
-
-    try {
-        const { error } = await supabaseClient
-            .from('profiles')
-            .update({
-                role: newRole ? 'admin' : 'user',
-                status: newStatus ? 'active' : 'inactive'
-            })
-            .eq('id', userId);
-
-        if (error) throw error;
-
-        showToast('success', 'Éxito', 'Usuario actualizado correctamente');
-        loadSecurityTable();
-
-    } catch (error) {
-        console.error('Error updating user:', error);
-        showToast('danger', 'Error', 'No se pudo actualizar el usuario: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-// Delete user
-async function deleteUserSecurity(userId) {
-    // Check permission to delete users
-    if (!checkSecurityPermission()) return;
-    if (!confirm('¿Está seguro de que desea eliminar este usuario?')) return;
-
-    showLoading();
-
-    try {
-        // Delete from profiles table
-        const { error: profileError } = await supabaseClient
-            .from('profiles')
-            .delete()
-            .eq('id', userId);
-
-        if (profileError) throw profileError;
-
-        // Delete from auth (optional - requires admin key)
-        // For now, just delete from profiles
-
-        showToast('success', 'Éxito', 'Usuario eliminado correctamente');
-        loadSecurityTable();
-
-    } catch (error) {
-        console.error('Error deleting user:', error);
-        showToast('danger', 'Error', 'No se pudo eliminar el usuario: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
 // ============================================================================
 // SUPABASE REALTIME - NOTIFICACIONES
 // ============================================================================
@@ -3607,129 +3445,6 @@ async function initializeApp() {
     }
 }
         
-// ============================================================================
-// FUNCIONES CLIENTE PARA GESTIÓN DE ROLES DE ADMINISTRADOR
-// ============================================================================
-
-// URL del servidor backend (ajusta según tu despliegue)
-// URL del servidor backend (ajusta según tu despliegue)
-const ADMIN_API_URL = ''; // Ruta relativa para producción (mismo dominio)
-
-/**
- * Cambiar rol de administrador de un usuario
- * @param {string} targetUserId - ID del usuario a modificar
- * @param {boolean} makeAdmin - true para promover, false para revocar
- * @returns {Promise<Object>} Resultado de la operación
- */
-async function setAdminRole(targetUserId, makeAdmin) {
-    try {
-        // Obtener el access token del usuario actual
-        const { data: { session } } = await supabaseClient.auth.getSession();
-
-        if (!session) {
-            throw new Error('No hay sesión activa');
-        }
-
-        const accessToken = session.access_token;
-
-        // Llamar al endpoint server-side
-        const response = await fetch(`${ADMIN_API_URL}/admin/set-admin`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-                targetUserId,
-                makeAdmin
-            })
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || 'Error al cambiar rol');
-        }
-
-        console.log('✓ Rol actualizado:', result);
-        return result;
-
-    } catch (error) {
-        console.error('Error cambiando rol de administrador:', error);
-        throw error;
-    }
-}
-
-/**
- * Verificar si el usuario actual es administrador
- * @returns {Promise<boolean>} true si es admin, false si no
- */
-async function checkIfCurrentUserIsAdmin() {
-    try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-
-        if (!session) {
-            return false;
-        }
-
-        const { data: profile } = await supabaseClient
-            .from('profiles')
-            .select('role')
-            .eq('id', session.user.id)
-            .single();
-
-        return profile && profile.role === 'admin';
-
-    } catch (error) {
-        console.error('Error verificando rol de administrador:', error);
-        return false;
-    }
-}
-
-/**
- * Ejemplo de uso en UI: botón para promover/revocar admin
- */
-async function handleAdminButtonClick(userId, currentlyAdmin) {
-    try {
-        const action = currentlyAdmin ? 'revocar' : 'promover';
-
-        if (!confirm(`¿Estás seguro de ${action} permisos de administrador para este usuario?`)) {
-            return;
-        }
-
-        const result = await setAdminRole(userId, !currentlyAdmin);
-
-        showToast('success', 'Éxito', result.message);
-
-        // Recargar lista de usuarios o actualizar UI
-        // loadSecurityTable(); // Descomentar para refrescar la tabla
-
-    } catch (error) {
-        showToast('danger', 'Error', error.message);
-    }
-}
-
-/**
- * Inicialización: verificar si usuario actual es admin al cargar la página
- */
-async function initializeAdminUI() {
-    const isAdmin = await checkIfCurrentUserIsAdmin();
-
-    if (isAdmin) {
-        console.log('✓ Usuario actual tiene permisos de administrador');
-        // Mostrar elementos de UI de administración
-        document.querySelectorAll('.admin-only').forEach(el => {
-            el.style.display = 'block';
-        });
-    } else {
-        console.log('Usuario actual NO es administrador');
-        // Ocultar elementos de UI de administración
-        document.querySelectorAll('.admin-only').forEach(el => {
-            el.style.display = 'none';
-        });
-    }
-}
-
     // ============================================================================
 // DASHBOARD & STATISTICS FUNCTIONS
 // ============================================================================
