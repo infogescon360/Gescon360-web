@@ -972,6 +972,43 @@ app.post('/admin/users', async (req, res) => {
   }
 });
 
+// Endpoint para OBTENER un usuario específico (GET)
+app.get('/admin/users/:id', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const targetUserId = req.params.id;
+
+    // Verificar permisos
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+       const appMeta = user.app_metadata || {};
+       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
+         return res.status(403).json({ error: 'Solo administradores pueden ver detalles de usuarios' });
+       }
+    }
+
+    // Obtener de Auth (fuente de verdad para roles/status)
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+    
+    if (authError) throw authError;
+    if (!authData.user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const u = authData.user;
+    const userData = {
+        id: u.id,
+        email: u.email,
+        full_name: u.user_metadata?.full_name || '',
+        role: u.app_metadata?.role || 'user',
+        status: u.user_metadata?.status || 'active'
+    };
+
+    res.json(userData);
+  } catch (e) {
+    console.error('Error en GET /admin/users/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint para ELIMINAR usuario (DELETE)
 app.delete('/admin/users/:id', requireAuth, async (req, res) => {
   try {

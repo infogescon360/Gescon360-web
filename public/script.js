@@ -1859,13 +1859,18 @@ async function loadUsers() {
 async function editUser(id) {
     showLoading();
     try {
-        const { data: user, error } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .eq('id', id)
-            .single();
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
 
-        if (error) throw error;
+        const response = await fetch(`/admin/users/${id}`, {
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+
+        if (!response.ok) {
+             const err = await response.json();
+             throw new Error(err.error || 'Error al cargar usuario');
+        }
+        const user = await response.json();
 
         document.getElementById('userId').value = user.id;
         document.getElementById('userEmail').value = user.email;
@@ -2103,13 +2108,18 @@ async function saveResponsible() {
 async function editResponsible(id) {
     showLoading();
     try {
-        const { data: user, error } = await supabaseClient
-            .from('profiles')
-            .select('*')
-            .eq('id', id)
-            .single();
-            
-        if (error) throw error;
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
+
+        const response = await fetch(`/admin/users/${id}`, {
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+
+        if (!response.ok) {
+             const err = await response.json();
+             throw new Error(err.error || 'Error al cargar responsable');
+        }
+        const user = await response.json();
 
         document.getElementById('respId').value = user.id;
         document.getElementById('respEmail').value = user.email;
