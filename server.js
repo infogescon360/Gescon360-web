@@ -65,7 +65,8 @@ async function getUserFromToken(accessToken) {
     throw new Error('Token inválido o expirado');
   }
   const data = await response.json();
-  return data.user || data; // Devuelve siempre el objeto usuario desempaquetado
+  // Supabase puede devolver { user: {...} } o solo el user
+  return data.user || data;
 }
 
 async function isUserAdmin(userId) {
@@ -84,7 +85,7 @@ async function isUserAdmin(userId) {
   const user = data.user || data;
   const appMeta = user.app_metadata || {};
 
-  // Convención: role === 'admin'; mantenemos compatibilidad con is_super_admin si ya existe
+  // Usar convención recomendada: app_metadata.role
   return appMeta.role === 'admin' || appMeta.is_super_admin === true;
 }
 
@@ -100,7 +101,8 @@ async function updateAdminStatus(targetUserId, makeAdmin) {
       user_metadata: {},
       app_metadata: {
         role: makeAdmin ? 'admin' : 'user',
-        is_super_admin: makeAdmin, // opcional, por compatibilidad con lo que ya tenías
+        // Mantener compatibilidad con lo que ya tenías
+        is_super_admin: makeAdmin,
       },
     }),
   });
