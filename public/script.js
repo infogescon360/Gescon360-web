@@ -1047,6 +1047,23 @@ async function addNewTask() {
     // Cargar responsables en el select
     const respSelect = document.getElementById('taskResponsible');
     if (respSelect) {
+        // Asegurar que tenemos datos de usuarios cargados desde el backend
+        if (!usersData || usersData.length === 0) {
+            try {
+                const session = await supabaseClient.auth.getSession();
+                if (session?.data?.session?.access_token) {
+                    const response = await fetch('/api/responsables', {
+                        headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+                    });
+                    if (response.ok) {
+                        usersData = await response.json();
+                    }
+                }
+            } catch (e) {
+                console.warn('Error cargando responsables en modal:', e);
+            }
+        }
+
         respSelect.innerHTML = '<option value="">Seleccionar...</option>';
         
         // Intentar usar usersData si está cargado, si no responsiblesData
@@ -1393,6 +1410,23 @@ async function editTask(id) {
     // Cargar responsables
     const respSelect = document.getElementById('taskResponsible');
     if (respSelect && respSelect.options.length <= 1) {
+      // Asegurar que tenemos datos de usuarios cargados
+      if (!usersData || usersData.length === 0) {
+          try {
+              const session = await supabaseClient.auth.getSession();
+              if (session?.data?.session?.access_token) {
+                  const response = await fetch('/api/responsables', {
+                      headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+                  });
+                  if (response.ok) {
+                      usersData = await response.json();
+                  }
+              }
+          } catch (e) {
+              console.warn('Error cargando responsables en modal (edit):', e);
+          }
+      }
+
       respSelect.innerHTML = '<option value="">Seleccionar...</option>';
       const sourceData = (usersData && usersData.length > 0) ? usersData : responsiblesData;
       sourceData.forEach(user => {
@@ -1417,12 +1451,29 @@ async function editTask(id) {
   }
 }
 
-function filterTasks() {
+async function filterTasks() {
     console.log('Función filterTasks llamada');
     
     // Cargar responsables en el select del filtro
     const respSelect = document.getElementById('filterTaskResponsible');
     if (respSelect) {
+        // Asegurar que tenemos datos de usuarios cargados
+        if (!usersData || usersData.length === 0) {
+            try {
+                const session = await supabaseClient.auth.getSession();
+                if (session?.data?.session?.access_token) {
+                    const response = await fetch('/api/responsables', {
+                        headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+                    });
+                    if (response.ok) {
+                        usersData = await response.json();
+                    }
+                }
+            } catch (e) {
+                console.warn('Error cargando responsables en modal (filter):', e);
+            }
+        }
+
         respSelect.innerHTML = '<option value="">Todos</option>';
         
         // Usar usersData si está disponible, sino responsiblesData
@@ -1919,85 +1970,6 @@ async function saveResponsible() {
         loadResponsibles();
     } catch (error) {
         console.error(error);
-        showToast('danger', 'Error', error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-        } catch (e) {
-            console.warn('No se pudieron cargar las tareas para estadísticas (posible error RLS):', e);
-            // Continuamos sin tareas para no bloquear la lista de usuarios
-        }
-
-        // Aggregate stats
-        const stats = {};
-        users.forEach(u => {
-            const name = u.full_name || u.email;
-            stats[name] = { active: 0, completed: 0 };
-        });
-
-        tasks.forEach(t => {
-            if (t.responsable && stats[t.responsable]) {
-                const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura'].includes(t.estado);
-                if (isCompleted) stats[t.responsable].completed++;
-                else stats[t.responsable].active++;
-            }
-        });
-
-        container.innerHTML = '';
-        if (users.length === 0) {
-            container.innerHTML = '<div class="alert alert-info">No hay responsables registrados.</div>';
-        } else {
-            users.forEach(user => {
-                const name = user.full_name || user.email;
-                const userStats = stats[name] || { active: 0, completed: 0 };
-                
-                // Helpers para UI
-                const statusMap = { 'active': 'Disponible', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick': 'Baja Médica' };
-                const classMap = { 'active': 'bg-success text-white', 'inactive': 'bg-secondary text-white', 'vacation': 'bg-warning text-dark', 'sick': 'bg-danger text-white' };
-                
-                const statusLabel = statusMap[user.status] || user.status;
-                const statusClass = classMap[user.status] || 'bg-secondary';
-                
-                const card = document.createElement('div');
-                card.className = 'responsible-card';
-                card.innerHTML = `
-                    <div class="responsible-header">
-                        <div>
-                            <div class="responsible-name">${name}</div>
-                            <div class="responsible-email">${user.email}</div>
-                        </div>
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-three-dots-vertical"></i>
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="editResponsible('${user.id}')">Editar</a></li>
-                                <li><a class="dropdown-item text-danger" href="#" onclick="deleteResponsible('${user.id}')">Eliminar</a></li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div class="responsible-status">
-                        <span class="status-indicator ${statusClass}" style="padding: 4px 8px; border-radius: 4px;">${statusLabel}</span>
-                        <span class="badge bg-light text-dark border">${user.role}</span>
-                    </div>
-                    <div class="row mt-3 text-center">
-                        <div class="col-6">
-                            <h3>${userStats.active}</h3>
-                            <small class="text-muted">Tareas Activas</small>
-                        </div>
-                        <div class="col-6">
-                            <h3>${userStats.completed}</h3>
-                            <small class="text-muted">Completadas</small>
-                        </div>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
-        }
-    } catch (error) {
-        console.error('Error loading responsibles:', error);
         showToast('danger', 'Error', error.message);
     } finally {
         hideLoading();
