@@ -1763,7 +1763,10 @@ async function loadUsers() {
             headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
 
-        if (!response.ok) throw new Error('Error al cargar usuarios desde el servidor');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Error al cargar usuarios desde el servidor');
+        }
         const users = await response.json();
 
         tableBody.innerHTML = '';

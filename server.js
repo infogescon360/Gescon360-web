@@ -19,15 +19,22 @@ app.use((req, res, next) => {
   next();
 });
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL ? process.env.SUPABASE_URL.trim() : '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ? process.env.SUPABASE_ANON_KEY.trim() : '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.trim() : '';
+const SUPABASE_KEY = process.env.SUPABASE_KEY ? process.env.SUPABASE_KEY.trim() : '';
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_KEY) {
   console.error('ERROR: Faltan variables de entorno requeridas');
   process.exit(1);
 }
+
+console.log('Iniciando servidor con Supabase URL:', SUPABASE_URL);
+// Verificación de seguridad de claves (sin revelarlas)
+if (SUPABASE_SERVICE_ROLE_KEY === SUPABASE_ANON_KEY) {
+  console.warn('⚠️ ADVERTENCIA CRÍTICA: SUPABASE_SERVICE_ROLE_KEY es igual a la ANON_KEY. Las operaciones administrativas fallarán.');
+}
+console.log('Service Role Key cargada:', SUPABASE_SERVICE_ROLE_KEY ? `SÍ (Inicio: ${SUPABASE_SERVICE_ROLE_KEY.substring(0, 5)}...)` : 'NO');
 
 // ---------------------------------------------------------------------
 // Supabase clients
@@ -37,6 +44,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  },
   db: { schema: 'public' }
 });
 
@@ -53,7 +64,8 @@ async function getUserFromToken(accessToken) {
   if (!response.ok) {
     throw new Error('Token inválido o expirado');
   }
-  return await response.json();
+  const data = await response.json();
+  return data.user || data; // Devuelve siempre el objeto usuario desempaquetado
 }
 
 async function isUserAdmin(userId) {
@@ -63,11 +75,17 @@ async function isUserAdmin(userId) {
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
     },
   });
+
   if (!response.ok) {
     throw new Error('No se pudo verificar el usuario');
   }
-  const userData = await response.json();
-  return userData.is_super_admin === true;
+
+  const data = await response.json();
+  const user = data.user || data;
+  const appMeta = user.app_metadata || {};
+
+  // Convención: role === 'admin'; mantenemos compatibilidad con is_super_admin si ya existe
+  return appMeta.role === 'admin' || appMeta.is_super_admin === true;
 }
 
 async function updateAdminStatus(targetUserId, makeAdmin) {
@@ -81,14 +99,17 @@ async function updateAdminStatus(targetUserId, makeAdmin) {
     body: JSON.stringify({
       user_metadata: {},
       app_metadata: {
-        is_super_admin: makeAdmin,
+        role: makeAdmin ? 'admin' : 'user',
+        is_super_admin: makeAdmin, // opcional, por compatibilidad con lo que ya tenías
       },
     }),
   });
+
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Error actualizando usuario: ${error}`);
   }
+
   return await response.json();
 }
 
@@ -98,6 +119,7 @@ async function requireAuth(req, res, next) {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No se proporcionó token de autorización' });
   }
+
   const token = authHeader.substring(7);
   try {
     const user = await getUserFromToken(token);
@@ -784,7 +806,7 @@ app.get('/admin/users', requireAuth, async (req, res) => {
            id: u.id,
            email: u.email,
            full_name: u.user_metadata?.full_name || u.email.split('@')[0],
-           role: u.app_metadata?.is_super_admin ? 'admin' : (u.user_metadata?.role || 'user'),
+           role: u.app_metadata?.role || (u.app_metadata?.is_super_admin ? 'admin' : (u.user_metadata?.role || 'user')),
            status: 'active',
            created_at: u.created_at
          }));
@@ -850,7 +872,13 @@ app.post('/admin/users', async (req, res) => {
     const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: tempPassword,
-      email_confirm: true
+      email_confirm: true,
+      app_metadata: {
+        role: role,
+      },
+      user_metadata: {
+        full_name: fullName || email.split('@')[0],
+      }
     });
 
     if (createError) {
