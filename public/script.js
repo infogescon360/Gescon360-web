@@ -119,7 +119,11 @@ function initInactivityTimer() {
 
 async function logoutDueToInactivity() {
     console.log('Sesión cerrada por inactividad');
-    await logout();
+    try {
+        await logout();
+    } catch (e) {
+        console.error('Error al cerrar sesión por inactividad:', e);
+    }
     alert('Sesión cerrada por inactividad');
 }
 
@@ -3736,30 +3740,34 @@ async function enviarResumenTareasPorGestor() {
 async function archivarFinalizados() {
     console.log('Archivando tareas finalizadas...');
     
-    // Buscar tareas finalizadas o finalizadas parciales
-    const { data: finishedTasks, error } = await supabaseClient
-        .from('tareas')
-        .select('*')
-        .or('estado.eq.Completada,estado.eq.Finalizado,estado.eq.Finalizado Parcial');
-        
-    if (error) {
-        console.error('Error buscando tareas para archivar:', error);
-        return;
-    }
-
-    if (finishedTasks && finishedTasks.length > 0) {
-        // En este sistema, "Archivar" podría significar mover a una tabla histórica o cambiar estado a 'Archivado'
-        // Vamos a cambiar el estado a 'Archivado' para que desaparezcan de la vista principal
-        const ids = finishedTasks.map(t => t.id);
-        
-        const { error: updateError } = await supabaseClient
+    try {
+        // Buscar tareas finalizadas o finalizadas parciales
+        const { data: finishedTasks, error } = await supabaseClient
             .from('tareas')
-            .update({ estado: 'Archivado' })
-            .in('id', ids);
+            .select('*')
+            .or('estado.eq.Completada,estado.eq.Finalizado,estado.eq.Finalizado Parcial');
             
-        if (!updateError) {
-            console.log(`${ids.length} tareas movidas a archivo.`);
+        if (error) {
+            console.error('Error buscando tareas para archivar:', error);
+            return;
         }
+
+        if (finishedTasks && finishedTasks.length > 0) {
+            // En este sistema, "Archivar" podría significar mover a una tabla histórica o cambiar estado a 'Archivado'
+            // Vamos a cambiar el estado a 'Archivado' para que desaparezcan de la vista principal
+            const ids = finishedTasks.map(t => t.id);
+            
+            const { error: updateError } = await supabaseClient
+                .from('tareas')
+                .update({ estado: 'Archivado' })
+                .in('id', ids);
+                
+            if (!updateError) {
+                console.log(`${ids.length} tareas movidas a archivo.`);
+            }
+        }
+    } catch (e) {
+        console.error('Error en archivarFinalizados:', e);
     }
 }
 
