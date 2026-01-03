@@ -1978,9 +1978,6 @@ function renderResponsiblesTable(users, tasks = []) {
     const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
     const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
-    // Botón de redistribución manual
-    const headerHtml = `<div class="d-flex justify-content-end mb-3"><button class="btn btn-outline-warning btn-sm" onclick="distributeWorkload()"><i class="bi bi-shuffle"></i> Redistribuir Carga de Ausentes</button></div>`;
-
     const stats = {};
     users.forEach(u => {
         const name = u.full_name || u.email;
@@ -1995,7 +1992,7 @@ function renderResponsiblesTable(users, tasks = []) {
         }
     });
 
-    container.innerHTML = headerHtml;
+    container.innerHTML = '';
     if (users.length === 0) {
         container.innerHTML = '<div class="alert alert-info">No hay responsables registrados.</div>';
         return;

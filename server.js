@@ -508,7 +508,7 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     // Intentamos consulta optimizada. Si falla (ej: columna renombrada/faltante), usamos fallback.
     const { data: optimizedData, error: optimizedError } = await supabaseAdmin
       .from('expedientes')
-      .select('estado, fecha_seguimiento, gestor_id, created_at')
+      .select('estado, fecha_seguimiento, gestor_id, created_at, tipo_dano, importe')
       .limit(50000); // Límite alto para asegurar traer todos
 
     if (optimizedError) {
@@ -539,7 +539,9 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
       enProceso: 0,
       vencimientoHoy: 0,
       nuevosEsteMes: 0,
-      urgentesPorUsuario: {}
+      urgentesPorUsuario: {},
+      porTipoDano: {},
+      importeTotalActivo: 0
     };
 
     if (expedientes && expedientes.length > 0) {
@@ -566,6 +568,15 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
         // Contar nuevos este mes
         if (exp.created_at && exp.created_at >= startOfMonth) {
           stats.nuevosEsteMes++;
+        }
+
+        // Desglose por tipo de daño
+        const tipo = exp.tipo_dano || 'Sin especificar';
+        stats.porTipoDano[tipo] = (stats.porTipoDano[tipo] || 0) + 1;
+
+        // Sumar importe de expedientes activos
+        if (!closedStates.has(estado)) {
+          stats.importeTotalActivo += (Number(exp.importe) || 0);
         }
       }
     }
