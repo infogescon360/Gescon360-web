@@ -1330,6 +1330,19 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
 
         if (!updateError) {
           totalRedistributed++;
+          
+          // Actualizar también la tabla 'tareas' para reflejar el cambio en la UI
+          const exp = tasks[i];
+          const numSiniestro = exp.num_siniestro || exp.numero_expediente;
+          if (numSiniestro) {
+             const targetName = targetUser.full_name || targetUser.email;
+             await supabaseAdmin
+               .from('tareas')
+               .update({ responsable: targetName })
+               .eq('num_siniestro', numSiniestro)
+               .not('estado', 'in', '("Completada","Archivado","Recobrado")');
+          }
+
           redistribution.push({
             taskId: tasks[i].id,
             from: unavailUser.email,
