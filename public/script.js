@@ -161,6 +161,24 @@ function handleGASError(error, operation) {
     hideLoading();
 }
 
+// --- SISTEMA GLOBAL DE MANEJO DE ERRORES ---
+// Captura cualquier promesa rechazada que no tenga un bloque .catch() asociado
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Promesa rechazada no controlada:', event.reason);
+    
+    let message = 'Error desconocido';
+    if (event.reason) {
+        // Extraer mensaje si es un objeto Error o convertir a string
+        message = event.reason.message || String(event.reason);
+        if (message === '[object Object]') {
+            try { message = JSON.stringify(event.reason); } catch(e) {}
+        }
+    }
+
+    showToast('danger', 'Error Inesperado', `Se ha producido un error: ${message}`);
+    hideLoading(); // Asegurar que la interfaz no se quede bloqueada con un spinner
+});
+
 // Show/hide loading overlay
 function showLoading() {
     document.getElementById('loadingOverlay').classList.add('show');
