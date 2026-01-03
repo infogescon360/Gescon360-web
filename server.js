@@ -497,6 +497,9 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     }
 
     const today = new Date().toISOString().split('T')[0];
+    // Inicio del mes actual para cálculo de "Nuevos este mes"
+    const dateObj = new Date();
+    const startOfMonth = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1).toISOString();
     
     // Optimización: Realizar una única consulta para obtener todos los estados y fechas
     // Esto reduce 4 llamadas HTTP a 1, mejorando significativamente la latencia.
@@ -505,7 +508,7 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     // Intentamos consulta optimizada. Si falla (ej: columna renombrada/faltante), usamos fallback.
     const { data: optimizedData, error: optimizedError } = await supabaseAdmin
       .from('expedientes')
-      .select('estado, fecha_seguimiento, gestor_id')
+      .select('estado, fecha_seguimiento, gestor_id, created_at')
       .limit(50000); // Límite alto para asegurar traer todos
 
     if (optimizedError) {
@@ -535,6 +538,7 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
       pendientes: 0,
       enProceso: 0,
       vencimientoHoy: 0,
+      nuevosEsteMes: 0,
       urgentesPorUsuario: {}
     };
 
@@ -557,6 +561,11 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
           // Desglose de urgentes por usuario
           const userName = exp.gestor_id ? (userMap.get(exp.gestor_id) || 'Desconocido') : 'Sin Asignar';
           stats.urgentesPorUsuario[userName] = (stats.urgentesPorUsuario[userName] || 0) + 1;
+        }
+
+        // Contar nuevos este mes
+        if (exp.created_at && exp.created_at >= startOfMonth) {
+          stats.nuevosEsteMes++;
         }
       }
     }
@@ -584,7 +593,7 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
     // Optimización: Seleccionar solo columnas necesarias para agrupar
     const { data: expedientes, error } = await supabaseAdmin
       .from('expedientes')
-      .select('estado, fecha_ocurrencia');
+      .select('estado, fecha_ocurrencia, created_at');
 
     if (error) throw error;
 
@@ -597,7 +606,7 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
       statusStats[status] = (statusStats[status] || 0) + 1;
 
       // Monthly
-      const dateStr = exp.fecha_ocurrencia;
+      const dateStr = exp.fecha_ocurrencia || exp.created_at;
       if (dateStr) {
         const date = new Date(dateStr);
         if (!isNaN(date.getTime())) {
