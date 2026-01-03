@@ -6,7 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
 app.use(express.static('public'));
 
@@ -531,7 +532,7 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
     const statusStats = {};
     const monthlyStats = {};
 
-    expedientes.forEach(exp => {
+    (expedientes || []).forEach(exp => {
       // Status
       const status = exp.estado || 'Sin estado';
       statusStats[status] = (statusStats[status] || 0) + 1;
@@ -604,12 +605,30 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
     
     for (const exp of expedientes) {
       try {
+        // Validación básica del registro
+        if (!exp || typeof exp !== 'object') {
+            throw new Error('El registro no es un objeto válido');
+        }
+
+        // Determinar el identificador (soporte para num_siniestro o numero_expediente)
+        const idExpediente = exp.num_siniestro || exp.numero_expediente;
+        if (!idExpediente) {
+            throw new Error('El expediente no tiene número de siniestro/expediente');
+        }
+
         if (opciones?.verificarDuplicados) {
-          const { data: existe } = await supabaseAdmin
+          // Usar el nombre de columna que coincida con la propiedad del objeto
+          const columnaBusqueda = exp.num_siniestro ? 'num_siniestro' : 'numero_expediente';
+
+          const { data: existe, error: searchError } = await supabaseAdmin
             .from('expedientes')
             .select('id')
-            .eq('numero_expediente', exp.numero_expediente)
-            .single();
+            .eq(columnaBusqueda, idExpediente)
+            .maybeSingle();
+          
+          if (searchError) {
+             throw new Error(`Error al verificar duplicados: ${searchError.message}`);
+          }
           
           if (existe) {
             resultados.duplicados.push(exp);
@@ -883,7 +902,7 @@ app.get('/api/responsables', requireAuth, async (req, res) => {
     }
     
     // Mapear solo campos necesarios para dropdowns/selects
-    const responsables = authData.users
+    const responsables = (authData?.users || [])
       .map(u => ({
         id: u.id,
         full_name: u.user_metadata?.full_name || u.email.split('@')[0],
@@ -925,7 +944,7 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     if (authError) throw new Error(`Auth Error: ${authError.message}`);
     
     // Mapear usuarios de Auth a estructura de perfil
-    const profiles = authData.users.map(u => ({
+    const profiles = (authData?.users || []).map(u => ({
       id: u.id,
       email: u.email,
       full_name: u.user_metadata?.full_name || u.email.split('@')[0],
@@ -1256,7 +1275,7 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
     const redistribution = [];
 
     // 3. Para cada usuario no disponible, redistribuir sus tareas
-    for (const unavailUser of unavailableUsers) {
+    for (const unavailUser of (unavailableUsers || [])) {
       // Obtener tareas pendientes del usuario no disponible
       const { data: tasks, error: tasksError } = await supabaseAdmin
         .from('expedientes')
@@ -1428,10 +1447,10 @@ app.post('/admin/migrate-roles', requireAuth, async (req, res) => {
 
     if (profilesError) throw new Error(profilesError.message);
 
-    const stats = { total: profiles.length, updated: 0, errors: [] };
+    const stats = { total: (profiles || []).length, updated: 0, errors: [] };
 
     // 2. Actualizar cada usuario en Auth
-    for (const p of profiles) {
+    for (const p of (profiles || [])) {
       if (!p.role) continue;
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
         p.id,

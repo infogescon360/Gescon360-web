@@ -3518,7 +3518,10 @@ async function loadReports() {
             headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
         });
 
-        if (!response.ok) throw new Error('Error al cargar datos de reportes');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Error al cargar datos de reportes');
+        }
         const chartData = await response.json();
 
         renderMonthlyChart(chartData.monthly);
