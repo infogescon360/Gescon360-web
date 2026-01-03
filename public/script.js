@@ -23,7 +23,8 @@ hideAllContent();
 // --- CONFIGURACIÓN DE SUPABASE (CLAVES PÚBLICAS) ---
 // REEMPLAZA ESTOS VALORES CON TUS CLAVES PÚBLICAS REALES DE SUPABASE
 const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
-const SUPABASE_ANON_KEY = ''eyJhbGciOiJ1U3I1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4MzQwNjIsImV4cCI6MjA1MTQxMDA2Mn0.zsSInJlzlj61mJE'_PROYECTO_SUPABASE';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJ1U3I1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4MzQwNjIsImV4cCI6MjA1MTQxMDA2Mn0.zsSInJlzlj61mJE';
+
 
 let supabaseClient = null;
 
@@ -393,8 +394,9 @@ function setupEventListeners() {
             console.log('Login form submitted');
             login();
         });
+    }
 
-            // File upload container click handler
+    // File upload container click handler
     const fileUploadContainer = document.getElementById('fileUploadContainer');
     const importFileInput = document.getElementById('importFile');
     
@@ -441,7 +443,6 @@ function setupEventListeners() {
                 }
             });
         }
-    }
     }
 
     // Toggle password visibility

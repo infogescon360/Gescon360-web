@@ -397,7 +397,6 @@
                             <i class="bi bi-cloud-upload"></i>
                         </div>
                         <div class="file-upload-text">
-                                                <input type="file" id="importFile" accept=".csv,.xls,.xlsx" style="display: none;">
                             Arrastra y suelta el archivo aquí o haz clic para seleccionarlo
                         </div>
                         <div class="file-upload-hint">
@@ -466,22 +465,7 @@
                                 </tr>
                             </thead>
                             <tbody id="importLogTable">
-                                <tr>
-                                    <td>10/12/2024 14:30</td>
-                                    <td>expedientes_diciembre.csv</td>
-                                    <td>150</td>
-                                    <td><span class="status-badge status-completado">Completado</span></td>
-                                    <td>0</td>
-                                    <td>0</td>
-                                </tr>
-                                <tr>
-                                    <td>09/12/2024 10:15</td>
-                                    <td>import_noviembre.xlsx</td>
-                                    <td>89</td>
-                                    <td><span class="status-badge status-completado">Completado</span></td>
-                                    <td>2</td>
-                                    <td>0</td>
-                                </tr>
+                                <!-- Los registros de importación se cargarán aquí dinámicamente -->
                             </tbody>
                         </table>
                     </div>
@@ -830,34 +814,7 @@
                                 </tr>
                             </thead>
                             <tbody id="limitsTableBody">
-                                <tr>
-                                    <td>Archivos de Importación</td>
-                                    <td>10 MB</td>
-                                    <td>2.3 MB</td>
-                                    <td>23%</td>
-                                    <td><span class="status-badge status-available">Normal</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Expedientes Activos</td>
-                                    <td>5,000</td>
-                                    <td>1,247</td>
-                                    <td>25%</td>
-                                    <td><span class="status-badge status-available">Normal</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Tareas Activas</td>
-                                    <td>2,000</td>
-                                    <td>156</td>
-                                    <td>8%</td>
-                                    <td><span class="status-badge status-available">Normal</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Expedientes Archivados</td>
-                                    <td>10,000</td>
-                                    <td>856</td>
-                                    <td>9%</td>
-                                    <td><span class="status-badge status-available">Normal</span></td>
-                                </tr>
+                                <!-- El estado del sistema se cargará aquí dinámicamente -->
                             </tbody>
                         </table>
                     </div>
