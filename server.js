@@ -914,7 +914,7 @@ app.post('/api/expedientes/:id/seguimientos', async (req, res) => {
     const { data, error } = await supabase
       .from('seguimientos')
       .insert({
-        expediente_id: parseInt(id),
+        expediente_id: id,
         comentario,
         tipo: tipo || 'nota',
         usuario_id: usuario_id || null,
