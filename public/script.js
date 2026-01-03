@@ -3641,13 +3641,10 @@ async function runDailyAutomations() {
         console.log('Ejecutando automatizaciones diarias...');
         
         try {
-            // 1. Enviar Resumen de Tareas por Gestor
-            await enviarResumenTareasPorGestor();
-            
-            // 2. Archivar Finalizados
+            // 1. Archivar Finalizados (Limpieza previa)
             await archivarFinalizados();
             
-            // 3. Reactivar usuarios que han vuelto (NUEVO)
+            // 2. Reactivar usuarios que han vuelto (Antes de distribuir)
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
                 const response = await fetch('/admin/users/reactivate', {
@@ -3660,7 +3657,7 @@ async function runDailyAutomations() {
                 }
             }
 
-            // 3. Redistribuir carga de usuarios ausentes (NUEVO)
+            // 3. Redistribuir carga de usuarios ausentes (Para que el email llegue al nuevo responsable)
             if (session) {
                 const responseRedist = await fetch('/admin/redistribute-tasks', {
                     method: 'POST',
@@ -3674,6 +3671,9 @@ async function runDailyAutomations() {
                     }
                 }
             }
+
+            // 4. Enviar Resumen de Tareas (Ahora que todo está actualizado)
+            await enviarResumenTareasPorGestor();
             
             // Marcar como ejecutado hoy
             localStorage.setItem('gescon360_lastDailyRun', today);
@@ -3716,21 +3716,35 @@ async function enviarResumenTareasPorGestor() {
             tasksByResponsible[resp].push(task);
         });
 
+        // 3. Obtener mapa de emails de usuarios activos para asegurar envío correcto
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        const userEmailMap = new Map();
+        
+        if (session) {
+            try {
+                const response = await fetch('/api/responsables', {
+                    headers: { 'Authorization': `Bearer ${session.access_token}` }
+                });
+                if (response.ok) {
+                    const users = await response.json();
+                    users.forEach(u => {
+                        if (u.full_name) userEmailMap.set(u.full_name, u.email);
+                        userEmailMap.set(u.email, u.email);
+                    });
+                }
+            } catch (e) { console.warn('Error cargando mapa de emails:', e); }
+        }
+
         // 3. Enviar correos (Iterar responsables)
         let emailsSent = 0;
         
         for (const [responsable, userTasks] of Object.entries(tasksByResponsible)) {
-            // Intentar resolver email si 'responsable' es un nombre
-            let email = responsable;
+            // Resolver email usando el mapa actualizado del servidor
+            let email = userEmailMap.get(responsable);
             
-            // Si no parece un email, buscar en datos locales
-            if (!email.includes('@')) {
-                const respObj = responsiblesData.find(r => r.name === responsable);
-                if (respObj) email = respObj.email;
-                else if (typeof usersData !== 'undefined') {
-                    const userObj = usersData.find(u => u.full_name === responsable);
-                    if (userObj) email = userObj.email;
-                }
+            // Fallback: Si no está en el mapa, intentar usar el string si parece email
+            if (!email && responsable.includes('@')) {
+                email = responsable;
             }
 
             if (email && email.includes('@')) {

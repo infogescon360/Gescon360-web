@@ -1620,41 +1620,46 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
       // Obtener tareas pendientes del usuario no disponible
       const { data: tasks, error: tasksError } = await supabaseAdmin
         .from('expedientes')
-        .select('*')
+        .select('id, num_siniestro, numero_expediente')
         .eq('gestor_id', unavailUser.id)
         .in('estado', ['Pendiente', 'En proceso']);
 
       if (tasksError || !tasks || tasks.length === 0) continue;
 
-      // Distribuir equitativamente entre usuarios activos
-      for (let i = 0; i < tasks.length; i++) {
-        const targetUser = activeUsers[i % activeUsers.length];
-        
+      // Agrupar actualizaciones por usuario destino (Batch Update)
+      const updatesByTarget = new Map(); // targetId -> { user, taskIds: [], siniestros: [] }
+
+      tasks.forEach((task, index) => {
+          const targetUser = activeUsers[index % activeUsers.length];
+          if (!updatesByTarget.has(targetUser.id)) {
+              updatesByTarget.set(targetUser.id, { user: targetUser, taskIds: [], siniestros: [] });
+          }
+          const group = updatesByTarget.get(targetUser.id);
+          group.taskIds.push(task.id);
+          const num = task.num_siniestro || task.numero_expediente;
+          if (num) group.siniestros.push(num);
+      });
+
+      // Ejecutar actualizaciones en lote
+      for (const [targetId, group] of updatesByTarget) {
         const { error: updateError } = await supabaseAdmin
           .from('expedientes')
-          .update({ gestor_id: targetUser.id })
-          .eq('id', tasks[i].id);
+          .update({ gestor_id: targetId })
+          .in('id', group.taskIds);
 
         if (!updateError) {
-          totalRedistributed++;
-          
-          // Actualizar también la tabla 'tareas' para reflejar el cambio en la UI
-          const exp = tasks[i];
-          const numSiniestro = exp.num_siniestro || exp.numero_expediente;
-          if (numSiniestro) {
-             const targetName = targetUser.full_name || targetUser.email;
+          totalRedistributed += group.taskIds.length;
+
+          if (group.siniestros.length > 0) {
+             const targetName = group.user.full_name || group.user.email;
              await supabaseAdmin
                .from('tareas')
                .update({ responsable: targetName })
-               .eq('num_siniestro', numSiniestro)
+               .in('num_siniestro', group.siniestros)
                .not('estado', 'in', '("Completada","Archivado","Recobrado")');
           }
 
-          redistribution.push({
-            taskId: tasks[i].id,
-            from: unavailUser.email,
-            to: targetUser.email
-          });
+          redistribution.push({ count: group.taskIds.length, to: group.user.email });
         }
       }
     }
