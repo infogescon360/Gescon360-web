@@ -1050,96 +1050,6 @@ body {
     animation: countUp 0.3s ease;
 }
 
-/* Estilos para el formulario de registro */
-.register-form {
-    max-width: 450px;
-    margin: 0 auto;
-}
-
-.register-logo {
-    text-align: center;
-    margin-bottom: 30px;
-}
-
-.register-logo i {
-    font-size: 3rem;
-    color: var(--primary-color);
-}
-
-.register-title {
-    text-align: center;
-    margin-bottom: 30px;
-    color: var(--primary-color);
-}
-
-.form-divider {
-    text-align: center;
-    margin: 20px 0;
-    position: relative;
-}
-
-.form-divider::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background-color: var(--border-color);
-}
-
-.form-divider span {
-    background-color: white;
-    padding: 0 15px;
-    position: relative;
-    color: #6c757d;
-}
-
-.password-strength {
-    height: 5px;
-    margin-top: 5px;
-    border-radius: 3px;
-    background-color: #e9ecef;
-}
-
-.password-strength-bar {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.3s ease;
-}
-
-.strength-weak {
-    background-color: var(--danger-color);
-    width: 33%;
-}
-
-.strength-medium {
-    background-color: var(--warning-color);
-    width: 66%;
-}
-
-.strength-strong {
-    background-color: var(--success-color);
-    width: 100%;
-}
-
-.first-time-setup {
-    background-color: rgba(52, 152, 219, 0.05);
-    border: 1px solid rgba(52, 152, 219, 0.2);
-    border-radius: 8px;
-    padding: 20px;
-    margin-bottom: 20px;
-}
-
-.first-time-setup h5 {
-    color: var(--secondary-color);
-    margin-bottom: 15px;
-}
-
-.first-time-setup p {
-    margin-bottom: 15px;
-}
-
 .loading {
     display: inline-block;
     width: 20px;
@@ -1243,4 +1153,3 @@ body {
 #appContainer {
         display: none; /* Oculto por defecto hasta que el usuario inicie sesión */
 }
-
