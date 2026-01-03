@@ -20,22 +20,23 @@ function hideAllContent() {
 // Llamar inmediatamente al cargar
 hideAllContent();
 
-// Configuración de Supabase - Se cargarán desde el servidor
+// --- CONFIGURACIÓN DE SUPABASE (CLAVES PÚBLICAS) ---
+// REEMPLAZA ESTOS VALORES CON TUS CLAVES PÚBLICAS REALES DE SUPABASE
+const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
+const SUPABASE_ANON_KEY = ''eyJhbGciOiJ1U3I1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4MzQwNjIsImV4cCI6MjA1MTQxMDA2Mn0.zsSInJlzlj61mJE'_PROYECTO_SUPABASE';
+
 let supabaseClient = null;
 
 // Función para cargar configuración y arrancar
 async function initAppConfig() {
     try {
-        const response = await fetch('/config');
-        if (!response.ok) throw new Error('No se pudo cargar la configuración');
-        const config = await response.json();
-
-        if (!config.supabaseUrl || !config.supabaseAnonKey) {
-            throw new Error('Configuración de Supabase incompleta');
+        // VALIDACIÓN: Asegurarse de que las claves se han reemplazado
+        if (SUPABASE_URL.includes('URL_PUBLICA') || SUPABASE_ANON_KEY.includes('ANON_KEY')) {
+            throw new Error('Las claves públicas de Supabase no han sido configuradas en script.js. Por favor, edita el archivo y reemplaza los valores de placeholder.');
         }
 
         // Inicializar cliente
-        supabaseClient = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         console.log('Supabase initialized');
 
         // Continuar con el flujo normal
