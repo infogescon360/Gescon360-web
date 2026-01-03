@@ -767,12 +767,17 @@ app.get('/api/expedientes/:id', async (req, res) => {
     
     const { data, error } = await supabase
       .from('expedientes')
-      .select('*')
+      .select('*, seguimientos(*)')
       .eq('id', id)
       .single();
     
     if (error) return res.status(404).json({ error: 'Expediente no encontrado' });
     
+    // Ordenar seguimientos por fecha descendente (más reciente primero)
+    if (data.seguimientos && Array.isArray(data.seguimientos)) {
+      data.seguimientos.sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+    }
+
     res.json(data);
   } catch (e) {
     console.error('Error en GET /api/expedientes/:id:', e);
