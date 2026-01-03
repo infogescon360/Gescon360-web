@@ -3621,12 +3621,13 @@ async function runDailyAutomations() {
             }
 
             // 3. Redistribuir carga de usuarios ausentes (NUEVO)
-                const response = await fetch('/admin/redistribute-tasks', {
+            if (session) {
+                const responseRedist = await fetch('/admin/redistribute-tasks', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${session.access_token}` }
                 });
-                if (response.ok) {
-                    const resData = await response.json();
+                if (responseRedist.ok) {
+                    const resData = await responseRedist.json();
                     console.log('Redistribución automática:', resData);
                     if (resData.redistributed > 0) {
                         showToast('info', 'Automatización', `${resData.redistributed} tareas redistribuidas.`);
