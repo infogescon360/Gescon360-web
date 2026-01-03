@@ -1396,24 +1396,32 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
     // 2. Obtener expedientes activos asignados
     const { data: expedientes, error: expError } = await supabaseAdmin
       .from('expedientes')
-      .select('id, gestor_id, num_siniestro, numero_expediente')
+      .select('id, gestor_id, num_siniestro, numero_expediente, fecha_seguimiento')
       .in('estado', ['Pendiente', 'En proceso', 'Pdte. revisión', 'En gestión'])
       .not('gestor_id', 'is', null);
 
     if (expError) throw expError;
 
+    // Definir fecha límite para no mover urgentes (Hoy + Mañana)
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const limitStr = tomorrow.toISOString().split('T')[0];
+
     // 3. Calcular carga
     const workload = {};
-    activeUsers.forEach(u => workload[u.id] = []);
+    activeUsers.forEach(u => workload[u.id] = { total: 0, movable: [] });
     
     const activeUserIds = new Set(activeUsers.map(u => u.id));
     expedientes.forEach(exp => {
         if (activeUserIds.has(exp.gestor_id)) {
-            workload[exp.gestor_id].push(exp);
+            const isUrgent = exp.fecha_seguimiento && exp.fecha_seguimiento <= limitStr;
+            workload[exp.gestor_id].total++;
+            if (!isUrgent) workload[exp.gestor_id].movable.push(exp);
         }
     });
 
-    const totalTasks = Object.values(workload).reduce((acc, arr) => acc + arr.length, 0);
+    const totalTasks = Object.values(workload).reduce((acc, obj) => acc + obj.total, 0);
     const average = Math.floor(totalTasks / activeUsers.length);
 
     // 4. Identificar movimientos (Sobrecargados -> Subcargados)
@@ -1421,11 +1429,11 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
     const underloaded = [];
 
     activeUsers.forEach(u => {
-        const tasks = workload[u.id];
-        if (tasks.length > average) {
-            overloaded.push({ user: u, tasks: tasks, excess: tasks.length - average });
-        } else if (tasks.length < average) {
-            underloaded.push({ user: u, deficit: average - tasks.length });
+        const load = workload[u.id];
+        if (load.total > average) {
+            overloaded.push({ user: u, tasks: load.movable, excess: load.total - average });
+        } else if (load.total < average) {
+            underloaded.push({ user: u, deficit: average - load.total });
         }
     });
 
@@ -1433,7 +1441,7 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
 
     // 5. Redistribuir
     for (const source of overloaded) {
-        while (source.excess > 0 && underloaded.length > 0) {
+        while (source.excess > 0 && source.tasks.length > 0 && underloaded.length > 0) {
             const target = underloaded[0];
             const expToMove = source.tasks.pop(); // Tomar uno del exceso
             
