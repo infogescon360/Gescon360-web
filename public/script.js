@@ -1579,7 +1579,7 @@ function renderDuplicatesTable() {
 }
 
 async function processAllDuplicates() {
-    if (!confirm('¿Estás seguro de procesar todos los duplicados? Esto actualizará los expedientes existentes con la información de los duplicados.')) return;
+    if (!confirm('¿Procesar y fusionar todos los duplicados detectados?\n\nSe actualizarán los expedientes originales con la información más reciente y se eliminarán los registros de la bandeja de duplicados.')) return;
     
     showLoading();
     try {
@@ -1641,7 +1641,7 @@ async function processAllDuplicates() {
 }
 
 async function deleteAllDuplicates() {
-    if (!confirm('¿Estás seguro de eliminar todos los registros de duplicados? Esta acción no se puede deshacer.')) return;
+    if (!confirm('¿Eliminar permanentemente todos los registros de la bandeja de duplicados?\n\nLos expedientes originales NO se verán afectados.')) return;
 
     showLoading();
     try {
@@ -1663,7 +1663,7 @@ async function deleteAllDuplicates() {
 }
 
 async function processDuplicate(id) {
-    if (!confirm('¿Procesar este duplicado? Se actualizará el expediente original.')) return;
+    if (!confirm('¿Fusionar este duplicado con el expediente original?\n\nSe actualizarán los datos del expediente existente con la información de este registro.')) return;
     
     showLoading();
     try {
@@ -1716,7 +1716,7 @@ async function processDuplicate(id) {
 }
 
 async function deleteDuplicate(id) {
-    if (!confirm('¿Eliminar este registro de duplicado?')) return;
+    if (!confirm('¿Eliminar este registro de la bandeja de duplicados?\n\nEl expediente original NO se verá afectado.')) return;
     
     showLoading();
     try {
@@ -1899,7 +1899,7 @@ async function editUser(id) {
 }
 
 async function deleteUser(id) {
-    if (!confirm('¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer.')) return;
+    if (!confirm('¿Eliminar permanentemente a este usuario?\n\nATENCIÓN: Sus tareas asignadas quedarán sin responsable y el acceso al sistema será revocado inmediatamente.')) return;
 
     showLoading();
     try {
@@ -2155,7 +2155,7 @@ async function editResponsible(id) {
 }
 
 async function deleteResponsible(id) {
-    if (!confirm('¿Eliminar este responsable?')) return;
+    if (!confirm('¿Eliminar a este responsable del sistema?\n\nSi tiene tareas asignadas, estas quedarán huérfanas hasta que se reasignen.')) return;
     showLoading();
     try {
         const session = await supabaseClient.auth.getSession();
@@ -2186,7 +2186,7 @@ async function deleteResponsible(id) {
 }
 
 async function distributeWorkload() {
-    if (!confirm('¿Redistribuir todas las tareas de usuarios no disponibles entre los usuarios activos?')) {
+    if (!confirm('¿Deseas redistribuir las tareas de usuarios NO DISPONIBLES (Baja, Vacaciones, Inactivos)?\n\nSe repartirán equitativamente entre los usuarios activos.')) {
         return;
     }
 
@@ -2316,7 +2316,7 @@ async function executeReassignment() {
     const fromUserName = fromSelect.options[fromSelect.selectedIndex].text;
     const toUserName = toSelect.options[toSelect.selectedIndex].text;
     
-    if (!confirm(`¿Está seguro de reasignar todos los expedientes y tareas de "${fromUserName}" a "${toUserName}"?`)) return;
+    if (!confirm(`¿Confirmar transferencia masiva?\n\nSe moverán TODOS los expedientes y tareas de "${fromUserName}" a "${toUserName}".`)) return;
     
     showLoading();
     try {

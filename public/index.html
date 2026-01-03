@@ -547,10 +547,10 @@
                     <div class="table-header">
                         <h5 class="table-title">Expedientes Duplicados Detectados</h5>
                         <div class="table-actions">
-                            <button class="btn-custom btn-outline-custom" onclick="processAllDuplicates()">
+                            <button class="btn-custom btn-outline-custom" onclick="processAllDuplicates()" title="Fusionar la información de los duplicados con los expedientes originales">
                                 <i class="bi bi-check-circle"></i> Procesar Todos
                             </button>
-                            <button class="btn-custom btn-outline-danger" onclick="deleteAllDuplicates()">
+                            <button class="btn-custom btn-outline-danger" onclick="deleteAllDuplicates()" title="Borrar permanentemente estos registros de duplicados (no afecta a los originales)">
                                 <i class="bi bi-trash"></i> Eliminar Todos
                             </button>
                         </div>
@@ -637,16 +637,16 @@
                     </div>
 
                     <div class="table-actions mb-3">
-                        <button class="btn-custom btn-primary-custom" onclick="addResponsible()">
+                        <button class="btn-custom btn-primary-custom" onclick="addResponsible()" title="Registrar un nuevo gestor en el sistema">
                             <i class="bi bi-plus"></i> Añadir Responsable
                         </button>
-                        <button class="btn-custom btn-outline-custom" onclick="distributeWorkload()">
+                        <button class="btn-custom btn-outline-custom" onclick="distributeWorkload()" title="Repartir tareas de usuarios ausentes (baja/vacaciones) entre los activos">
                             <i class="bi bi-arrow-repeat"></i> Distribuir Carga Equitativamente
                         </button>
-                        <button class="btn-custom btn-outline-custom" onclick="rebalanceActiveWorkload()">
+                        <button class="btn-custom btn-outline-custom" onclick="rebalanceActiveWorkload()" title="Nivelar la carga de trabajo moviendo tareas de usuarios saturados a los que tienen menos">
                             <i class="bi bi-scales"></i> Rebalancear Carga Activa
                         </button>
-                        <button class="btn-custom btn-outline-warning" onclick="openReassignTasksModal()">
+                        <button class="btn-custom btn-outline-warning" onclick="openReassignTasksModal()" title="Transferir manualmente todas las tareas de un usuario a otro">
                             <i class="bi bi-arrow-left-right"></i> Reasignar Tareas
                         </button>
                     </div>
