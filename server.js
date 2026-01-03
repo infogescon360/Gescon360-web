@@ -282,7 +282,13 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ success: true, message: 'Contraseña actualizada correctamente' });
+    // 3. Invalidar todas las sesiones activas (Logout global)
+    const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(userId);
+    if (signOutError) {
+      console.warn('Advertencia: No se pudieron cerrar las sesiones activas:', signOutError.message);
+    }
+
+    res.json({ success: true, message: 'Contraseña actualizada. Se han cerrado todas las sesiones.' });
   } catch (e) {
     console.error('Error en /api/change-password:', e);
     res.status(500).json({ error: e.message });
