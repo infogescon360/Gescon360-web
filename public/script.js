@@ -984,7 +984,11 @@ async function performAdvancedSearch() {
     const dateEnd = document.getElementById('advDateEnd').value;
     const amountMin = document.getElementById('advAmountMin').value;
     const amountMax = document.getElementById('advAmountMax').value;
-    const status = document.getElementById('advStatus').value;
+    
+    const statusSelect = document.getElementById('advStatus');
+    const selectedStatuses = Array.from(statusSelect.selectedOptions).map(opt => opt.value).filter(v => v);
+    const status = selectedStatuses.join(',');
+
     const asegurado = document.getElementById('advAsegurado').value.trim();
     const ciaCausante = document.getElementById('advCiaCausante').value.trim();
     const tipoDano = document.getElementById('advTipoDano').value.trim();
@@ -993,25 +997,27 @@ async function performAdvancedSearch() {
     if (resultsContainer) resultsContainer.style.display = 'none';
 
     try {
-        let query = supabaseClient.from('expedientes').select('*');
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
 
-        if (dateStart) query = query.gte('fecha_ocurrencia', dateStart);
-        if (dateEnd) query = query.lte('fecha_ocurrencia', dateEnd);
-        
-        if (amountMin) query = query.gte('importe', parseFloat(amountMin));
-        if (amountMax) query = query.lte('importe', parseFloat(amountMax));
-        
-        if (status) query = query.eq('estado', status);
-        
-        if (asegurado) query = query.ilike('nombre_asegurado', `%${asegurado}%`);
-        if (ciaCausante) query = query.ilike('cia_causante', `%${ciaCausante}%`);
-        if (tipoDano) query = query.ilike('tipo_dano', `%${tipoDano}%`);
+        const params = new URLSearchParams();
+        if (dateStart) params.append('fecha_desde', dateStart);
+        if (dateEnd) params.append('fecha_hasta', dateEnd);
+        if (amountMin) params.append('importe_min', amountMin);
+        if (amountMax) params.append('importe_max', amountMax);
+        if (status) params.append('estado', status);
+        if (asegurado) params.append('asegurado', asegurado);
+        if (ciaCausante) params.append('cia_causante', ciaCausante);
+        if (tipoDano) params.append('tipo_dano', tipoDano);
 
-        const { data, error } = await query;
+        const response = await fetch(`/api/expedientes?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
 
-        if (error) throw error;
+        if (!response.ok) throw new Error('Error en la búsqueda avanzada');
+        const result = await response.json();
 
-        renderSearchResults(data);
+        renderSearchResults(result.data);
         
     } catch (error) {
         console.error('Error en búsqueda avanzada:', error);

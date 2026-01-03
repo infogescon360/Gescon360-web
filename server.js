@@ -726,12 +726,29 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
 // ============================================================================
 app.get('/api/expedientes', async (req, res) => {
   try {
-    const { gestor_id, estado, buscar, limite = 100, offset = 0 } = req.query;
+    const { gestor_id, estado, buscar, fecha_desde, fecha_hasta, ordenarPor, orden, limite = 100, offset = 0, campos,
+            importe_min, importe_max, cia_causante, tipo_dano, asegurado } = req.query;
     
-    let query = supabase.from('expedientes').select('*', { count: 'exact' });
+    const seleccion = campos || '*';
+    let query = supabase.from('expedientes').select(seleccion, { count: 'exact' });
     
     if (gestor_id) query = query.eq('gestor_id', gestor_id);
-    if (estado) query = query.eq('estado', estado);
+    if (estado) {
+      if (typeof estado === 'string' && estado.includes(',')) {
+        query = query.in('estado', estado.split(',').map(e => e.trim()));
+      } else {
+        query = query.eq('estado', estado);
+      }
+    }
+    if (fecha_desde) query = query.gte('fecha_ocurrencia', fecha_desde);
+    if (fecha_hasta) query = query.lte('fecha_ocurrencia', fecha_hasta);
+    
+    if (importe_min) query = query.gte('importe', importe_min);
+    if (importe_max) query = query.lte('importe', importe_max);
+    if (cia_causante && cia_causante.trim()) query = query.ilike('cia_causante', `%${cia_causante.trim()}%`);
+    if (tipo_dano && tipo_dano.trim()) query = query.ilike('tipo_dano', `%${tipo_dano.trim()}%`);
+    if (asegurado && asegurado.trim()) query = query.ilike('nombre_asegurado', `%${asegurado.trim()}%`);
+
     if (buscar) {
       query = query.or(
         `num_siniestro.ilike.%${buscar}%,` +
@@ -742,7 +759,10 @@ app.get('/api/expedientes', async (req, res) => {
       );
     }
     
-    query = query.order('id', { ascending: false })
+    const columnaOrden = ordenarPor || 'id';
+    const esAscendente = orden === 'asc';
+    
+    query = query.order(columnaOrden, { ascending: esAscendente })
       .range(parseInt(offset), parseInt(offset) + parseInt(limite) - 1);
     
     const { data, error, count } = await query;
