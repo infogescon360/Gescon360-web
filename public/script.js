@@ -2220,6 +2220,38 @@ async function distributeWorkload() {
     }
 }
 
+async function rebalanceActiveWorkload() {
+    if (!confirm('¿Deseas rebalancear la carga de trabajo entre los usuarios activos?\n\nSe moverán tareas de los usuarios más saturados a los que tienen menos carga para igualar el promedio.')) return;
+
+    showLoading();
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
+
+        const response = await fetch('/admin/rebalance-workload', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Error en el rebalanceo');
+        }
+
+        const result = await response.json();
+        showToast('success', 'Rebalanceo', result.message);
+        
+        if (currentSection === 'admin') loadResponsibles();
+        if (currentSection === 'workload') loadWorkloadStats();
+
+    } catch (error) {
+        console.error('Error rebalancing:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
 async function openReassignTasksModal() {
     console.log('Abriendo modal de reasignación...');
     const fromSelect = document.getElementById('reassignFromUser');

@@ -1367,6 +1367,113 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint para REBALANCEO DE CARGA ACTIVA (Nivelación entre usuarios activos)
+app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    
+    // Verificar permisos
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+      const appMeta = user.app_metadata || {};
+      if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
+        return res.status(403).json({ error: 'Solo administradores pueden rebalancear carga' });
+      }
+    }
+
+    // 1. Obtener usuarios activos (candidatos)
+    const { data: activeUsers, error: usersError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name')
+      .eq('status', 'active')
+      .eq('role', 'user'); // Solo usuarios estándar
+
+    if (usersError) throw usersError;
+    if (!activeUsers || activeUsers.length < 2) {
+      return res.json({ success: false, message: 'Se necesitan al menos 2 usuarios activos para rebalancear.' });
+    }
+
+    // 2. Obtener expedientes activos asignados
+    const { data: expedientes, error: expError } = await supabaseAdmin
+      .from('expedientes')
+      .select('id, gestor_id, num_siniestro, numero_expediente')
+      .in('estado', ['Pendiente', 'En proceso', 'Pdte. revisión', 'En gestión'])
+      .not('gestor_id', 'is', null);
+
+    if (expError) throw expError;
+
+    // 3. Calcular carga
+    const workload = {};
+    activeUsers.forEach(u => workload[u.id] = []);
+    
+    const activeUserIds = new Set(activeUsers.map(u => u.id));
+    expedientes.forEach(exp => {
+        if (activeUserIds.has(exp.gestor_id)) {
+            workload[exp.gestor_id].push(exp);
+        }
+    });
+
+    const totalTasks = Object.values(workload).reduce((acc, arr) => acc + arr.length, 0);
+    const average = Math.floor(totalTasks / activeUsers.length);
+
+    // 4. Identificar movimientos (Sobrecargados -> Subcargados)
+    const overloaded = [];
+    const underloaded = [];
+
+    activeUsers.forEach(u => {
+        const tasks = workload[u.id];
+        if (tasks.length > average) {
+            overloaded.push({ user: u, tasks: tasks, excess: tasks.length - average });
+        } else if (tasks.length < average) {
+            underloaded.push({ user: u, deficit: average - tasks.length });
+        }
+    });
+
+    let movedCount = 0;
+
+    // 5. Redistribuir
+    for (const source of overloaded) {
+        while (source.excess > 0 && underloaded.length > 0) {
+            const target = underloaded[0];
+            const expToMove = source.tasks.pop(); // Tomar uno del exceso
+            
+            const { error: updateError } = await supabaseAdmin
+                .from('expedientes')
+                .update({ gestor_id: target.user.id })
+                .eq('id', expToMove.id);
+
+            if (!updateError) {
+                movedCount++;
+                // Sincronizar Tareas
+                const numSiniestro = expToMove.num_siniestro || expToMove.numero_expediente;
+                if (numSiniestro) {
+                    const targetName = target.user.full_name || target.user.email;
+                    await supabaseAdmin
+                        .from('tareas')
+                        .update({ responsable: targetName })
+                        .eq('num_siniestro', numSiniestro)
+                        .not('estado', 'in', '("Completada","Archivado","Recobrado")');
+                }
+            }
+
+            source.excess--;
+            target.deficit--;
+
+            if (target.deficit === 0) underloaded.shift();
+        }
+    }
+
+    res.json({ 
+        success: true, 
+        message: `Rebalanceo completado. Se movieron ${movedCount} expedientes. Promedio aprox: ${average}.` 
+    });
+
+  } catch (e) {
+    console.error('Error en rebalanceo:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint para REDISTRIBUIR tareas de usuarios no disponibles
 app.post('/admin/tasks/redistribute', requireAuth, async (req, res) => {
   try {
