@@ -67,6 +67,12 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 })();
 
+// --- SISTEMA DE CACHÉ EN MEMORIA ---
+const apiCache = {
+  stats: { data: null, timestamp: 0, ttl: 60 * 1000 }, // 1 minuto para dashboard
+  charts: { data: null, timestamp: 0, ttl: 5 * 60 * 1000 } // 5 minutos para reportes
+};
+
 // ---------------------------------------------------------------------
 // Helpers de autenticación / roles
 // ---------------------------------------------------------------------
@@ -481,6 +487,12 @@ app.post('/api/archivados/:id/restaurar', requireAuth, async (req, res) => {
 // Endpoint optimizado para estadísticas del Dashboard (evita RLS y descarga masiva)
 app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
   try {
+    // Verificar caché
+    const now = Date.now();
+    if (apiCache.stats.data && (now - apiCache.stats.timestamp < apiCache.stats.ttl)) {
+      return res.json(apiCache.stats.data);
+    }
+
     const today = new Date().toISOString().split('T')[0];
     
     // Optimización: Realizar una única consulta para obtener todos los estados y fechas
@@ -518,6 +530,10 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
       }
     }
 
+    // Actualizar caché
+    apiCache.stats.data = stats;
+    apiCache.stats.timestamp = now;
+
     res.json(stats);
   } catch (e) {
     console.error('Error en /api/dashboard/stats:', e);
@@ -528,6 +544,12 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
 // Endpoint para datos de GRÁFICOS (Reportes) - Optimizado
 app.get('/api/reports/charts', requireAuth, async (req, res) => {
   try {
+    // Verificar caché
+    const now = Date.now();
+    if (apiCache.charts.data && (now - apiCache.charts.timestamp < apiCache.charts.ttl)) {
+      return res.json(apiCache.charts.data);
+    }
+
     // Optimización: Seleccionar solo columnas necesarias para agrupar
     const { data: expedientes, error } = await supabaseAdmin
       .from('expedientes')
@@ -554,10 +576,16 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
       }
     });
 
-    res.json({
+    const result = {
       status: statusStats,
       monthly: monthlyStats
-    });
+    };
+
+    // Actualizar caché
+    apiCache.charts.data = result;
+    apiCache.charts.timestamp = now;
+
+    res.json(result);
   } catch (e) {
     console.error('Error en /api/reports/charts:', e);
     res.status(500).json({ error: e.message });
