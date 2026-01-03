@@ -1930,6 +1930,19 @@ async function deleteUser(id) {
     }
 }
 
+// Función para mostrar/ocultar fecha de retorno según estado
+function toggleReturnDate() {
+    const status = document.getElementById('respStatus').value;
+    const container = document.getElementById('returnDateContainer');
+    // Mostrar solo para estados temporales (Vacaciones, Baja)
+    if (['vacation', 'sick', 'permit'].includes(status)) {
+        container.style.display = 'block';
+    } else {
+        container.style.display = 'none';
+        document.getElementById('respReturnDate').value = '';
+    }
+}
+
 async function loadResponsibles() {
     console.log('Cargando responsables...');
     showLoading();
@@ -2048,6 +2061,8 @@ function addResponsible() {
     document.getElementById('respId').value = '';
     const emailInput = document.getElementById('respEmail');
     if (emailInput) emailInput.disabled = false;
+    
+    toggleReturnDate(); // Resetear visibilidad
 
     const modal = document.getElementById('responsibleModal');
     if (modal) {
@@ -2062,6 +2077,7 @@ async function saveResponsible() {
     const fullName = document.getElementById('respName').value;
     const status = document.getElementById('respStatus').value;
     const role = document.getElementById('respRole').value;
+    const returnDate = document.getElementById('respReturnDate').value;
 
     if (!email || !fullName) {
         showToast('warning', 'Datos incompletos', 'Email y Nombre son obligatorios');
@@ -2081,7 +2097,7 @@ async function saveResponsible() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session.access_token}`
                 },
-                body: JSON.stringify({ fullName, status, role })
+                body: JSON.stringify({ fullName, status, role, returnDate })
             });
 
             if (!response.ok) {
@@ -2101,7 +2117,7 @@ async function saveResponsible() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session.access_token}`
                 },
-                body: JSON.stringify({ fullName, email, role })
+                body: JSON.stringify({ fullName, email, role, status, returnDate })
             });
 
             const result = await response.json();
@@ -2143,6 +2159,10 @@ async function editResponsible(id) {
         document.getElementById('respName').value = user.full_name || '';
         document.getElementById('respStatus').value = user.status || 'active';
         document.getElementById('respRole').value = user.role || 'user';
+        
+        // Cargar fecha de retorno si existe (viene en user_metadata)
+        document.getElementById('respReturnDate').value = user.return_date || '';
+        toggleReturnDate(); // Actualizar visibilidad
 
         const modal = document.getElementById('responsibleModal');
         if (modal) modal.classList.add('active');
@@ -3587,9 +3607,20 @@ async function runDailyAutomations() {
             // 2. Archivar Finalizados
             await archivarFinalizados();
             
-            // 3. Redistribuir carga de usuarios ausentes (NUEVO)
+            // 3. Reactivar usuarios que han vuelto (NUEVO)
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
+                const response = await fetch('/admin/users/reactivate', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${session.access_token}` }
+                });
+                if (response.ok) {
+                    const resData = await response.json();
+                    if (resData.reactivated > 0) showToast('success', 'Reactivación', `${resData.reactivated} usuarios reactivados.`);
+                }
+            }
+
+            // 3. Redistribuir carga de usuarios ausentes (NUEVO)
                 const response = await fetch('/admin/redistribute-tasks', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${session.access_token}` }

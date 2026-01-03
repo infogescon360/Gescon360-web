@@ -1411,12 +1411,17 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="respStatus" class="form-label">Estado Operativo</label>
-                            <select class="form-select" id="respStatus">
+                            <select class="form-select" id="respStatus" onchange="toggleReturnDate()">
                                 <option value="active">Disponible</option>
                                 <option value="vacation">Vacaciones</option>
                                 <option value="sick">Baja Médica</option>
                                 <option value="inactive">Inactivo</option>
                             </select>
+                        </div>
+                        <div class="col-md-6" id="returnDateContainer" style="display: none;">
+                            <label for="respReturnDate" class="form-label">Fecha de Retorno</label>
+                            <input type="date" class="form-control" id="respReturnDate">
+                            <small class="text-muted" style="font-size: 0.75rem;">Reactivación automática</small>
                         </div>
                         <div class="col-md-6">
                             <label for="respRole" class="form-label">Rol</label>

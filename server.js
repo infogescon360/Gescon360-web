@@ -783,7 +783,7 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
 // ============================================================================
 app.get('/api/expedientes', requireAuth, async (req, res) => {
   try {
-    const { gestor_id, estado, buscar, fecha_desde, fecha_hasta, ordenarPor, orden, limite = 100, offset = 0, campos,
+    const { gestor_id, estado, buscar, fecha_desde, fecha_hasta, created_at_desde, created_at_hasta, ordenarPor, orden, limite = 100, offset = 0, campos,
             importe_min, importe_max, cia_causante, tipo_dano, asegurado } = req.query;
     
     const seleccion = campos || '*';
@@ -800,6 +800,9 @@ app.get('/api/expedientes', requireAuth, async (req, res) => {
     if (fecha_desde) query = query.gte('fecha_ocurrencia', fecha_desde);
     if (fecha_hasta) query = query.lte('fecha_ocurrencia', fecha_hasta);
     
+    if (created_at_desde) query = query.gte('created_at', created_at_desde);
+    if (created_at_hasta) query = query.lte('created_at', created_at_hasta);
+
     if (importe_min) query = query.gte('importe', importe_min);
     if (importe_max) query = query.lte('importe', importe_max);
     if (cia_causante && cia_causante.trim()) query = query.ilike('cia_causante', `%${cia_causante.trim()}%`);
@@ -1130,7 +1133,7 @@ app.post('/admin/users', async (req, res) => {
       }
     }
 
-    const { email, fullName, role } = req.body || {};
+    const { email, fullName, role, status, returnDate } = req.body || {};
     if (!email || !role) {
       return res.status(400).json({ error: 'Email y rol son obligatorios' });
     }
@@ -1155,6 +1158,8 @@ app.post('/admin/users', async (req, res) => {
       },
       user_metadata: {
         full_name: fullName || email.split('@')[0],
+        status: status || 'active',
+        return_date: returnDate || null
       }
     });
 
@@ -1175,7 +1180,7 @@ app.post('/admin/users', async (req, res) => {
                         email: email,
                         full_name: fullName || email.split('@')[0],
                         role: role,
-                        status: 'active'
+                        status: status || 'active'
                     });
                  
                  if (upsertError) {
@@ -1198,7 +1203,7 @@ app.post('/admin/users', async (req, res) => {
         email,
         full_name: fullName || email.split('@')[0],
         role,
-        status: 'active'
+        status: status || 'active'
       });
 
     if (profileUpsertError) {
@@ -1244,7 +1249,8 @@ app.get('/admin/users/:id', requireAuth, async (req, res) => {
         email: u.email,
         full_name: u.user_metadata?.full_name || '',
         role: u.app_metadata?.role || 'user',
-        status: u.user_metadata?.status || 'active'
+        status: u.user_metadata?.status || 'active',
+        return_date: u.user_metadata?.return_date || null
     };
 
     res.json(userData);
@@ -1323,7 +1329,7 @@ app.put('/admin/users/:id', requireAuth, async (req, res) => {
   try {
     const user = req.user;
     const targetUserId = req.params.id;
-    const { fullName, role, status } = req.body;
+    const { fullName, role, status, returnDate } = req.body;
 
     // Verificar permisos
     const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
@@ -1342,6 +1348,7 @@ app.put('/admin/users/:id', requireAuth, async (req, res) => {
     if (fullName) updates.user_metadata.full_name = fullName;
     if (status) updates.user_metadata.status = status;
     if (role) updates.app_metadata.role = role;
+    if (returnDate !== undefined) updates.user_metadata.return_date = returnDate; // Guardar fecha retorno
 
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
         targetUserId,
@@ -1365,6 +1372,49 @@ app.put('/admin/users/:id', requireAuth, async (req, res) => {
     res.json({ message: 'Usuario actualizado correctamente' });
   } catch (e) {
     console.error('Error en PUT /admin/users/:id:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint para REACTIVACIÓN AUTOMÁTICA de usuarios
+app.post('/admin/users/reactivate', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    // Verificar permisos (admin o sistema)
+    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    if (!isSuperAdmin) {
+       const appMeta = user.app_metadata || {};
+       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    // 1. Obtener todos los usuarios
+    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (error) throw error;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let reactivatedCount = 0;
+
+    // 2. Filtrar y actualizar
+    for (const u of users) {
+        const meta = u.user_metadata || {};
+        if (meta.status !== 'active' && meta.return_date) {
+            const returnDate = new Date(meta.return_date);
+            // Si la fecha de retorno es hoy o ya pasó
+            if (returnDate <= today) {
+                // Reactivar usuario
+                await supabaseAdmin.auth.admin.updateUserById(u.id, {
+                    user_metadata: { ...meta, status: 'active', return_date: null }
+                });
+                // Sincronizar perfil
+                await supabaseAdmin.from('profiles').update({ status: 'active' }).eq('id', u.id);
+                reactivatedCount++;
+            }
+        }
+    }
+    res.json({ success: true, reactivated: reactivatedCount });
+  } catch (e) {
+    console.error('Error en reactivación:', e);
     res.status(500).json({ error: e.message });
   }
 });
