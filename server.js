@@ -803,12 +803,11 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Se requiere un array de expedientes' });
     }
     
-    const resultados = {
-      exitosos: [],
-      duplicados: [],
-      errores: []
-    };
-    
+    // 1. FASE DE PREPARACIÓN Y VALIDACIÓN (En Memoria)
+    const validos = [];
+    const erroresValidacion = [];
+    const numSiniestrosVistos = new Set();
+
     for (const exp of expedientes) {
       try {
         // Validación básica del registro
@@ -822,64 +821,95 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
             throw new Error('El expediente no tiene número de siniestro/expediente');
         }
 
+        // Evitar duplicados dentro del mismo archivo de carga
+        if (numSiniestrosVistos.has(idExpediente)) {
+            throw new Error(`Registro duplicado dentro del archivo: ${idExpediente}`);
+        }
+        numSiniestrosVistos.add(idExpediente);
+
+        // Clonar y sanear
+        const cleanExp = { ...exp };
+        cleanExp.num_siniestro = idExpediente;
+        delete cleanExp.numero_expediente; // Limpiar campo legacy
+
         // Validación y saneamiento de tipos de datos
         // 1. Importe: Asegurar que es numérico
-        if (exp.importe !== undefined && exp.importe !== null) {
-            let impVal = exp.importe;
+        if (cleanExp.importe !== undefined && cleanExp.importe !== null) {
+            let impVal = cleanExp.importe;
             if (typeof impVal === 'string') {
                 impVal = impVal.replace(/[€$£\s]/g, '').replace(',', '.');
             }
             const imp = parseFloat(impVal);
-            exp.importe = isNaN(imp) ? 0 : imp;
+            cleanExp.importe = isNaN(imp) ? 0 : imp;
         }
 
         // 2. Fechas: Asegurar formato válido para PostgreSQL
         const dateFields = ['fecha_ocurrencia', 'fecha_inicio', 'fecha_vencimiento', 'fecha_seguimiento'];
         for (const field of dateFields) {
-            if (exp[field]) {
-                const d = new Date(exp[field]);
+            if (cleanExp[field]) {
+                const d = new Date(cleanExp[field]);
                 if (isNaN(d.getTime())) {
-                    exp[field] = null; // Fecha inválida -> null
+                    cleanExp[field] = null; // Fecha inválida -> null
                 } else {
-                    exp[field] = d.toISOString();
+                    cleanExp[field] = d.toISOString();
                 }
             }
         }
 
-        if (opciones?.verificarDuplicados) {
-          // Usar el nombre de columna que coincida con la propiedad del objeto
-          const columnaBusqueda = exp.num_siniestro ? 'num_siniestro' : 'numero_expediente';
-
-          const { data: existe, error: searchError } = await supabaseAdmin
-            .from('expedientes')
-            .select('id')
-            .eq(columnaBusqueda, idExpediente)
-            .maybeSingle();
-          
-          if (searchError) {
-             throw new Error(`Error al verificar duplicados: ${searchError.message}`);
-          }
-          
-          if (existe) {
-            resultados.duplicados.push(exp);
-            continue;
-          }
-        }
+        // Valores por defecto
+        if (!cleanExp.estado) cleanExp.estado = 'Pdte. revisión';
         
+        validos.push(cleanExp);
+      } catch (err) {
+        erroresValidacion.push({ expediente: exp, error: err.message });
+      }
+    }
+
+    // 2. FASE DE VERIFICACIÓN DE DUPLICADOS EN DB (Batch)
+    let paraInsertar = validos;
+    const duplicadosDB = [];
+
+    if (opciones?.verificarDuplicados && validos.length > 0) {
+        const ids = validos.map(e => e.num_siniestro);
+        
+        // Consultar existentes en lote (mucho más rápido que uno a uno)
+        // Nota: Si son miles de registros, Supabase podría limitar la URL. 
+        // Para producción masiva (>2000), se recomienda chunking, pero para <10MB está bien.
+        const { data: existing, error: searchError } = await supabaseAdmin
+            .from('expedientes')
+            .select('num_siniestro')
+            .in('num_siniestro', ids);
+            
+        if (searchError) throw new Error(`Error verificando duplicados: ${searchError.message}`);
+        
+        const existingSet = new Set(existing?.map(e => e.num_siniestro));
+        
+        paraInsertar = [];
+        for (const exp of validos) {
+            if (existingSet.has(exp.num_siniestro)) {
+                duplicadosDB.push(exp);
+            } else {
+                paraInsertar.push(exp);
+            }
+        }
+    }
+
+    // 3. FASE DE INSERCIÓN TRANSACCIONAL (Bulk Insert)
+    // Postgres trata un insert múltiple como una sola transacción atómica.
+    // Si falla CUALQUIER registro del lote, falla TODO el lote.
+    let exitosos = [];
+    
+    if (paraInsertar.length > 0) {
         const { data, error } = await supabaseAdmin
           .from('expedientes')
-          .insert(exp)
-          .select()
-          .single();
+          .insert(paraInsertar)
+          .select();
         
-        if (error) throw error;
-        resultados.exitosos.push(data);
-      } catch (err) {
-        resultados.errores.push({
-          expediente: exp,
-          error: err.message
-        });
-      }
+        if (error) {
+            // Error crítico: Abortar operación completa
+            throw new Error(`Error crítico de base de datos (Transacción abortada): ${error.message}`);
+        }
+        exitosos = data;
     }
     
     // Registrar log de importación en el servidor
@@ -887,14 +917,19 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
       await supabaseAdmin.from('import_logs').insert({
         file_name: fileName,
         total_records: expedientes.length,
-        duplicates_count: resultados.duplicados.length, // Duplicados detectados por el backend
-        status: resultados.errores.length > 0 ? 'Con Errores' : 'Completado',
+        duplicates_count: duplicadosDB.length,
+        status: (erroresValidacion.length > 0 || exitosos.length === 0) ? 'Con Advertencias' : 'Completado',
         created_at: new Date().toISOString()
       });
     }
     
-    res.json(resultados);
+    res.json({
+        exitosos,
+        duplicados: duplicadosDB,
+        errores: erroresValidacion
+    });
   } catch (e) {
+    console.error('Error en importación:', e);
     res.status(500).json({ error: e.message });
   }
 });
