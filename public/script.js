@@ -24,7 +24,7 @@ hideAllContent();
 // REEMPLAZA ESTOS VALORES CON TUS CLAVES PÚBLICAS REALES DE SUPABASE
 const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4MzQwNjIsImV4cCI6MjA1MTQxMDA2Mn0.zsSInJlzlj61mJE5dhZ6z3hZUlokG5lZ2d3cuSvlJwi';
-// Inicializar Supabase
+
 let supabaseClient = null;
 
 // Función para cargar configuración y arrancar
