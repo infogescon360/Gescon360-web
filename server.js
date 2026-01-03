@@ -499,16 +499,27 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     // Esto reduce 4 llamadas HTTP a 1, mejorando significativamente la latencia.
     const { data: expedientes, error } = await supabaseAdmin
       .from('expedientes')
-      .select('estado, fecha_seguimiento')
+      .select('estado, fecha_seguimiento, gestor_id')
       .limit(50000); // Límite alto para asegurar traer todos
 
     if (error) throw error;
+
+    // Obtener perfiles para mapear nombres en el desglose de urgentes
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, email');
+    
+    const userMap = new Map();
+    if (profiles) {
+      profiles.forEach(p => userMap.set(p.id, p.full_name || p.email));
+    }
 
     const stats = {
       total: 0,
       pendientes: 0,
       enProceso: 0,
-      vencimientoHoy: 0
+      vencimientoHoy: 0,
+      urgentesPorUsuario: {}
     };
 
     if (expedientes && expedientes.length > 0) {
@@ -526,6 +537,10 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
         
         if (exp.fecha_seguimiento && exp.fecha_seguimiento <= today && !closedStates.has(estado)) {
           stats.vencimientoHoy++;
+          
+          // Desglose de urgentes por usuario
+          const userName = exp.gestor_id ? (userMap.get(exp.gestor_id) || 'Desconocido') : 'Sin Asignar';
+          stats.urgentesPorUsuario[userName] = (stats.urgentesPorUsuario[userName] || 0) + 1;
         }
       }
     }
