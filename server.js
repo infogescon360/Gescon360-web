@@ -219,6 +219,30 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Endpoint para cambiar contraseña (Usuario autenticado)
+app.post('/api/change-password', requireAuth, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const userId = req.user.id;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña es obligatoria y debe tener al menos 6 caracteres' });
+    }
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { password: password }
+    );
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Contraseña actualizada correctamente' });
+  } catch (e) {
+    console.error('Error en /api/change-password:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ---------------------------------------------------------------------
 // Endpoints de administración
 // ---------------------------------------------------------------------
