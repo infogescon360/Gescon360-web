@@ -73,6 +73,11 @@ const apiCache = {
   charts: { data: null, timestamp: 0, ttl: 5 * 60 * 1000 } // 5 minutos para reportes
 };
 
+// --- RATE LIMITING (Login) ---
+const loginAttempts = new Map(); // Key: IP, Value: { count, lockedUntil }
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutos
+
 // ---------------------------------------------------------------------
 // Helpers de autenticación / roles
 // ---------------------------------------------------------------------
@@ -161,6 +166,19 @@ async function requireAuth(req, res, next) {
 // ============================================================================
 app.post('/api/login', async (req, res) => {
   try {
+    // 1. Rate Limiting Check
+    const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    const now = Date.now();
+    
+    if (loginAttempts.has(clientIp)) {
+        const attempt = loginAttempts.get(clientIp);
+        if (attempt.lockedUntil && attempt.lockedUntil > now) {
+            const secondsLeft = Math.ceil((attempt.lockedUntil - now) / 1000);
+            return res.status(429).json({ error: `Demasiados intentos fallidos. Por favor, espera ${secondsLeft} segundos.` });
+        }
+        if (attempt.lockedUntil && attempt.lockedUntil <= now) loginAttempts.delete(clientIp);
+    }
+
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email y contraseña son obligatorios' });
@@ -173,8 +191,20 @@ app.post('/api/login', async (req, res) => {
 
     if (signInError || !signInData.session) {
       console.error('Error en signInWithPassword:', signInError);
+      
+      // 2. Record Failed Attempt
+      const attempt = loginAttempts.get(clientIp) || { count: 0, lockedUntil: null };
+      attempt.count++;
+      if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
+          attempt.lockedUntil = Date.now() + LOCKOUT_TIME;
+      }
+      loginAttempts.set(clientIp, attempt);
+
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
+
+    // 3. Clear Attempts on Success
+    loginAttempts.delete(clientIp);
 
     const { session, user } = signInData;
     const accessToken = session.access_token;
