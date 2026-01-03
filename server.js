@@ -222,16 +222,32 @@ app.post('/api/login', async (req, res) => {
 // Endpoint para cambiar contraseña (Usuario autenticado)
 app.post('/api/change-password', requireAuth, async (req, res) => {
   try {
-    const { password } = req.body;
+    const { currentPassword, newPassword } = req.body;
     const userId = req.user.id;
+    const userEmail = req.user.email;
 
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: 'La contraseña es obligatoria y debe tener al menos 6 caracteres' });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'La contraseña actual y la nueva son obligatorias' });
     }
 
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+    }
+
+    // 1. Verificar contraseña actual
+    const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+      email: userEmail,
+      password: currentPassword
+    });
+
+    if (signInError) {
+      return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+    }
+
+    // 2. Actualizar contraseña
     const { error } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
-      { password: password }
+      { password: newPassword }
     );
 
     if (error) throw error;
