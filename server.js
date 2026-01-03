@@ -500,12 +500,25 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
     
     // Optimización: Realizar una única consulta para obtener todos los estados y fechas
     // Esto reduce 4 llamadas HTTP a 1, mejorando significativamente la latencia.
-    const { data: expedientes, error } = await supabaseAdmin
+    let expedientes = [];
+    
+    // Intentamos consulta optimizada. Si falla (ej: columna renombrada/faltante), usamos fallback.
+    const { data: optimizedData, error: optimizedError } = await supabaseAdmin
       .from('expedientes')
       .select('estado, fecha_seguimiento, gestor_id')
       .limit(50000); // Límite alto para asegurar traer todos
 
-    if (error) throw error;
+    if (optimizedError) {
+        console.warn('Aviso: Consulta optimizada de stats falló, usando fallback:', optimizedError.message);
+        const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+            .from('expedientes')
+            .select('*') // Select * es seguro porque ignora columnas que no existen
+            .limit(50000);
+        if (fallbackError) throw fallbackError;
+        expedientes = fallbackData || [];
+    } else {
+        expedientes = optimizedData || [];
+    }
 
     // Obtener perfiles para mapear nombres en el desglose de urgentes
     const { data: profiles } = await supabaseAdmin
