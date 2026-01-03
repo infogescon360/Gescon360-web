@@ -571,7 +571,7 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
     // Optimización: Seleccionar solo columnas necesarias para agrupar
     const { data: expedientes, error } = await supabaseAdmin
       .from('expedientes')
-      .select('estado, fecha_ocurrencia, created_at');
+      .select('estado, fecha_ocurrencia');
 
     if (error) throw error;
 
@@ -584,7 +584,7 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
       statusStats[status] = (statusStats[status] || 0) + 1;
 
       // Monthly
-      const dateStr = exp.fecha_ocurrencia || exp.created_at;
+      const dateStr = exp.fecha_ocurrencia;
       if (dateStr) {
         const date = new Date(dateStr);
         if (!isNaN(date.getTime())) {
@@ -1601,13 +1601,14 @@ app.post('/admin/reassign-workload', requireAuth, async (req, res) => {
     if (!targetProfile) return res.status(404).json({ error: 'Usuario destino no encontrado' });
 
     // 1. Reasignar Expedientes (gestor_id)
-    const { error: expError, count: expCount } = await supabaseAdmin
+    const { data: movedExps, error: expError } = await supabaseAdmin
       .from('expedientes')
       .update({ gestor_id: targetUserId })
       .eq('gestor_id', sourceUserId)
-      .select('id', { count: 'exact' });
+      .select('num_siniestro');
 
     if (expError) throw new Error(`Error reasignando expedientes: ${expError.message}`);
+    const expCount = movedExps ? movedExps.length : 0;
 
     // 2. Reasignar Tareas (responsable es texto)
     let tasksCount = 0;
@@ -1615,14 +1616,27 @@ app.post('/admin/reassign-workload', requireAuth, async (req, res) => {
        const targetName = targetProfile.full_name || targetProfile.email;
        // Actualizar por nombre o email
        const searchTerms = [sourceProfile.full_name, sourceProfile.email].filter(Boolean);
+       const movedSiniestros = movedExps ? movedExps.map(e => e.num_siniestro).filter(Boolean) : [];
        
+       // A. Actualizar tareas vinculadas a los expedientes movidos (Prioridad)
+       if (movedSiniestros.length > 0) {
+         const { count } = await supabaseAdmin
+            .from('tareas')
+            .update({ responsable: targetName })
+            .in('num_siniestro', movedSiniestros)
+            .select('id', { count: 'exact' });
+         tasksCount += (count || 0);
+       }
+
+       // B. Actualizar tareas restantes por coincidencia de nombre (Fallback)
        if (searchTerms.length > 0) {
          const { count } = await supabaseAdmin
             .from('tareas')
             .update({ responsable: targetName })
             .in('responsable', searchTerms)
+            .neq('responsable', targetName) // Evitar re-contar las ya actualizadas
             .select('id', { count: 'exact' });
-         tasksCount = count || 0;
+         tasksCount += (count || 0);
        }
     }
 
