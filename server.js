@@ -388,7 +388,7 @@ app.patch('/api/tareas/:id', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------
 // Búsqueda, duplicados, archivados y reportes
 // ---------------------------------------------------------------------
-app.get('/api/expedientes/buscar', async (req, res) => {
+app.get('/api/expedientes/buscar', requireAuth, async (req, res) => {
   try {
     const { expediente, poliza, sgr, dni } = req.query;
     let query = supabase.from('expedientes').select('*');
@@ -724,7 +724,7 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
 // ============================================================================
 // CRUD COMPLETO DE EXPEDIENTES
 // ============================================================================
-app.get('/api/expedientes', async (req, res) => {
+app.get('/api/expedientes', requireAuth, async (req, res) => {
   try {
     const { gestor_id, estado, buscar, fecha_desde, fecha_hasta, ordenarPor, orden, limite = 100, offset = 0, campos,
             importe_min, importe_max, cia_causante, tipo_dano, asegurado } = req.query;
@@ -781,7 +781,7 @@ app.get('/api/expedientes', async (req, res) => {
   }
 });
 
-app.get('/api/expedientes/:id', async (req, res) => {
+app.get('/api/expedientes/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -805,7 +805,7 @@ app.get('/api/expedientes/:id', async (req, res) => {
   }
 });
 
-app.post('/api/expedientes', async (req, res) => {
+app.post('/api/expedientes', requireAuth, async (req, res) => {
   try {
     const expediente = req.body;
     
@@ -845,7 +845,7 @@ app.post('/api/expedientes', async (req, res) => {
   }
 });
 
-app.put('/api/expedientes/:id', async (req, res) => {
+app.put('/api/expedientes/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const cambios = req.body;
@@ -908,7 +908,7 @@ app.delete('/api/expedientes/:id', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/expedientes/:id/seguimientos', async (req, res) => {
+app.get('/api/expedientes/:id/seguimientos', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -927,7 +927,7 @@ app.get('/api/expedientes/:id/seguimientos', async (req, res) => {
   }
 });
 
-app.post('/api/expedientes/:id/seguimientos', async (req, res) => {
+app.post('/api/expedientes/:id/seguimientos', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { comentario, tipo, usuario_id } = req.body;
