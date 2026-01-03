@@ -23,7 +23,7 @@ hideAllContent();
 // --- CONFIGURACIÓN DE SUPABASE (CLAVES PÚBLICAS) ---
 // REEMPLAZA ESTOS VALORES CON TUS CLAVES PÚBLICAS REALES DE SUPABASE
 const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
-const SUPABASE_ANON_KEY = sb_publishable_pIkhbDqBb0v9LLQcf3drog_BO2reqkF
+const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2OTU3NTksImV4cCI6MjA4MTA1NTc1OX0.Xwf4tuU4o5VouLVeNOSwAdlbA0GduhA2AuDqBnfpF4c
 
 let supabaseClient = null;
 
