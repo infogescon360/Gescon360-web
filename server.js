@@ -1411,7 +1411,7 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
     // 2. Obtener expedientes activos asignados
     const { data: expedientes, error: expError } = await supabaseAdmin
       .from('expedientes')
-      .select('id, gestor_id, num_siniestro, numero_expediente, fecha_seguimiento')
+      .select('id, gestor_id, num_siniestro, fecha_seguimiento')
       .in('estado', ['Pendiente', 'En proceso', 'Pdte. revisión', 'En gestión'])
       .not('gestor_id', 'is', null);
 
@@ -1468,7 +1468,7 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
             if (!updateError) {
                 movedCount++;
                 // Sincronizar Tareas
-                const numSiniestro = expToMove.num_siniestro || expToMove.numero_expediente;
+                const numSiniestro = expToMove.num_siniestro;
                 if (numSiniestro) {
                     const targetName = target.user.full_name || target.user.email;
                     await supabaseAdmin
