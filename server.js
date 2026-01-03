@@ -701,6 +701,30 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
             throw new Error('El expediente no tiene número de siniestro/expediente');
         }
 
+        // Validación y saneamiento de tipos de datos
+        // 1. Importe: Asegurar que es numérico
+        if (exp.importe !== undefined && exp.importe !== null) {
+            let impVal = exp.importe;
+            if (typeof impVal === 'string') {
+                impVal = impVal.replace(/[€$£\s]/g, '').replace(',', '.');
+            }
+            const imp = parseFloat(impVal);
+            exp.importe = isNaN(imp) ? 0 : imp;
+        }
+
+        // 2. Fechas: Asegurar formato válido para PostgreSQL
+        const dateFields = ['fecha_ocurrencia', 'fecha_inicio', 'fecha_vencimiento', 'fecha_seguimiento'];
+        for (const field of dateFields) {
+            if (exp[field]) {
+                const d = new Date(exp[field]);
+                if (isNaN(d.getTime())) {
+                    exp[field] = null; // Fecha inválida -> null
+                } else {
+                    exp[field] = d.toISOString();
+                }
+            }
+        }
+
         if (opciones?.verificarDuplicados) {
           // Usar el nombre de columna que coincida con la propiedad del objeto
           const columnaBusqueda = exp.num_siniestro ? 'num_siniestro' : 'numero_expediente';
