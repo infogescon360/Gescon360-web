@@ -384,8 +384,53 @@ app.get('/config', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services: {
+      database: { status: 'unknown', latency_ms: 0 },
+      auth: { status: 'unknown', latency_ms: 0 }
+    }
+  };
+
+  try {
+    // 1. Verificar Base de Datos (Tabla profiles)
+    const dbStart = Date.now();
+    const { error: dbError } = await supabaseAdmin.from('profiles').select('count', { count: 'exact', head: true });
+    health.services.database.latency_ms = Date.now() - dbStart;
+
+    if (dbError) {
+      health.services.database.status = 'error';
+      health.services.database.error = dbError.message;
+      health.status = 'degraded';
+    } else {
+      health.services.database.status = 'connected';
+    }
+
+    // 2. Verificar Servicio de Autenticación
+    const authStart = Date.now();
+    const { error: authError } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
+    health.services.auth.latency_ms = Date.now() - authStart;
+
+    if (authError) {
+      health.services.auth.status = 'error';
+      health.services.auth.error = authError.message;
+      health.status = 'degraded';
+    } else {
+      health.services.auth.status = 'connected';
+    }
+
+    const statusCode = health.status === 'ok' ? 200 : 503;
+    res.status(statusCode).json(health);
+
+  } catch (e) {
+    console.error('Health check critical failure:', e);
+    health.status = 'critical_error';
+    health.error = e.message;
+    res.status(500).json(health);
+  }
 });
 
 // ---------------------------------------------------------------------
