@@ -483,36 +483,42 @@ app.get('/api/dashboard/stats', requireAuth, async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
     
-    // Ejecutar consultas en paralelo para mejor rendimiento
-    const [totalRes, pendientesRes, enProcesoRes, urgentesRes] = await Promise.all([
-        // Total expedientes
-        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true }),
+    // Optimización: Realizar una única consulta para obtener todos los estados y fechas
+    // Esto reduce 4 llamadas HTTP a 1, mejorando significativamente la latencia.
+    const { data: expedientes, error } = await supabaseAdmin
+      .from('expedientes')
+      .select('estado, fecha_seguimiento')
+      .limit(50000); // Límite alto para asegurar traer todos
+
+    if (error) throw error;
+
+    const stats = {
+      total: 0,
+      pendientes: 0,
+      enProceso: 0,
+      vencimientoHoy: 0
+    };
+
+    if (expedientes && expedientes.length > 0) {
+      stats.total = expedientes.length;
+      
+      const pendientesStates = new Set(['Pdte. revisión', 'Pendiente']);
+      const enProcesoStates = new Set(['En Proceso', 'En gestión']);
+      const closedStates = new Set(['Completado', 'Archivado', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos']);
+
+      for (const exp of expedientes) {
+        const estado = exp.estado || '';
         
-        // Pendientes
-        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true })
-            .in('estado', ['Pdte. revisión', 'Pendiente']),
-            
-        // En Proceso
-        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true })
-            .in('estado', ['En Proceso', 'En gestión']),
-            
-        // Vencimiento Hoy (Urgentes) - Excluye finalizados/archivados
-        supabaseAdmin.from('expedientes').select('*', { count: 'exact', head: true })
-            .lte('fecha_seguimiento', today)
-            .not('estado', 'in', '("Completado","Archivado","Finalizado","Finalizado Parcial","Rehusado","Datos NO válidos")')
-    ]);
+        if (pendientesStates.has(estado)) stats.pendientes++;
+        else if (enProcesoStates.has(estado)) stats.enProceso++;
+        
+        if (exp.fecha_seguimiento && exp.fecha_seguimiento <= today && !closedStates.has(estado)) {
+          stats.vencimientoHoy++;
+        }
+      }
+    }
 
-    if (totalRes.error) throw totalRes.error;
-    if (pendientesRes.error) throw pendientesRes.error;
-    if (enProcesoRes.error) throw enProcesoRes.error;
-    if (urgentesRes.error) throw urgentesRes.error;
-
-    res.json({
-      total: totalRes.count || 0,
-      pendientes: pendientesRes.count || 0,
-      enProceso: enProcesoRes.count || 0,
-      vencimientoHoy: urgentesRes.count || 0
-    });
+    res.json(stats);
   } catch (e) {
     console.error('Error en /api/dashboard/stats:', e);
     res.status(500).json({ error: e.message });
