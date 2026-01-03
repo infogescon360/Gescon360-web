@@ -393,9 +393,9 @@ app.get('/api/expedientes/buscar', async (req, res) => {
     const { expediente, poliza, sgr, dni } = req.query;
     let query = supabase.from('expedientes').select('*');
     
-    if (expediente) query = query.ilike('numero_expediente', `%${expediente}%`);
-    if (poliza) query = query.ilike('numero_poliza', `%${poliza}%`);
-    if (sgr) query = query.ilike('numero_sgr', `%${sgr}%`);
+    if (expediente) query = query.ilike('num_siniestro', `%${expediente}%`);
+    if (poliza) query = query.ilike('num_poliza', `%${poliza}%`);
+    if (sgr) query = query.ilike('num_sgr', `%${sgr}%`);
     if (dni) query = query.ilike('dni', `%${dni}%`);
     
     const { data, error } = await query.limit(100);
@@ -415,10 +415,13 @@ app.post('/api/duplicados/verificar', requireAuth, async (req, res) => {
     
     const duplicados = [];
     for (const exp of expedientes) {
+      const numSiniestro = exp.num_siniestro || exp.numero_expediente;
+      const numPoliza = exp.num_poliza || exp.numero_poliza;
+
       const { data, error } = await supabaseAdmin
         .from('expedientes')
         .select('*')
-        .or(`numero_expediente.eq.${exp.numero_expediente},numero_poliza.eq.${exp.numero_poliza},dni.eq.${exp.dni}`);
+        .or(`num_siniestro.eq.${numSiniestro},num_poliza.eq.${numPoliza},dni.eq.${exp.dni}`);
       
       if (error) continue;
       if (data && data.length > 0) {
@@ -731,11 +734,11 @@ app.get('/api/expedientes', async (req, res) => {
     if (estado) query = query.eq('estado', estado);
     if (buscar) {
       query = query.or(
-        `numero_expediente.ilike.%${buscar}%,` +
-        `numero_poliza.ilike.%${buscar}%,` +
-        `numero_sgr.ilike.%${buscar}%,` +
+        `num_siniestro.ilike.%${buscar}%,` +
+        `num_poliza.ilike.%${buscar}%,` +
+        `num_sgr.ilike.%${buscar}%,` +
         `dni.ilike.%${buscar}%,` +
-        `cliente_nombre.ilike.%${buscar}%`
+        `nombre_asegurado.ilike.%${buscar}%`
       );
     }
     
@@ -781,14 +784,15 @@ app.post('/api/expedientes', async (req, res) => {
   try {
     const expediente = req.body;
     
-    if (!expediente.numero_expediente) {
+    const numSiniestro = expediente.num_siniestro || expediente.numero_expediente;
+    if (!numSiniestro) {
       return res.status(400).json({ error: 'El número de expediente es obligatorio' });
     }
     
     const { data: existe } = await supabase
       .from('expedientes')
       .select('id')
-      .eq('numero_expediente', expediente.numero_expediente)
+      .eq('num_siniestro', numSiniestro)
       .maybeSingle();
     
     if (existe) {
