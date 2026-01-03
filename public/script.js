@@ -179,6 +179,24 @@ window.addEventListener('unhandledrejection', function(event) {
     hideLoading(); // Asegurar que la interfaz no se quede bloqueada con un spinner
 });
 
+// Captura errores de sintaxis y tiempo de ejecución (no promesas)
+window.onerror = function(message, source, lineno, colno, error) {
+    console.error('Error global detectado:', { message, source, lineno, colno, error });
+    
+    // Evitar bucles infinitos si showToast falla
+    try {
+        const errorMsg = message || 'Error desconocido';
+        const fileName = source ? source.split('/').pop() : '';
+        const location = fileName ? ` en ${fileName}:${lineno}` : '';
+        showToast('danger', 'Error de Aplicación', `${errorMsg}${location}`);
+    } catch (e) {
+        console.error('Error al mostrar notificación de error:', e);
+    }
+    
+    hideLoading(); // Asegurar que la interfaz no se quede bloqueada
+    return false; // Permitir que el error se propague a la consola
+};
+
 // Show/hide loading overlay
 function showLoading() {
     document.getElementById('loadingOverlay').classList.add('show');
