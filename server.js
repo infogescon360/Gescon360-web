@@ -385,6 +385,30 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+app.get('/health/supabase', async (req, res) => {
+  try {
+    // Consulta mínima: selecciona 1 fila de alguna tabla ligera, por ejemplo "expedientes"
+    const { data, error } = await supabaseAdmin
+      .from('expedientes')
+      .select('id')
+      .limit(1);
+
+    if (error) {
+      console.error('Error keep-alive Supabase:', error);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Supabase keep-alive ok',
+      rows: data?.length ?? 0,
+    });
+  } catch (err) {
+    console.error('Unexpected error keep-alive Supabase:', err);
+    return res.status(500).json({ ok: false, error: 'Unexpected error' });
+  }
+});
+
 app.get('/health', async (req, res) => {
   const health = {
     status: 'ok',

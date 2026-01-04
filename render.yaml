@@ -1,0 +1,21 @@
+services:
+  # 1. Tu servicio web principal (Backend + Frontend)
+  - type: web
+    name: gescon360-web
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
+
+  # 2. Cron Job para mantener Supabase activo
+  # Ejecuta una petición diaria para evitar que Supabase pause el proyecto (pasa a inactivo tras 1 semana sin uso)
+  # Nota: Los Cron Jobs en Render pueden tener un coste asociado según el plan.
+  - type: cron
+    name: keep-alive-supabase
+    env: image
+    image: curlimages/curl
+    schedule: "0 8 * * *" # Ejecutar diariamente a las 08:00 UTC
+    command: curl -s -f https://gescon360-web.onrender.com/health/supabase

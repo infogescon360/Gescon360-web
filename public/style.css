@@ -118,12 +118,22 @@ body {
 }
 
 /* Authentication Styles */
-.auth-container {
-    max-width: 450px;
-    margin: 50px auto;
+#authContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #f5f5f5;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .auth-card {
+    width: 100%;
+    max-width: 450px;
     background-color: white;
     border-radius: 10px;
     padding: 30px;
@@ -141,6 +151,7 @@ body {
     padding-top: 20px;
     z-index: 1000;
     transition: all 0.3s ease;
+    display: none; /* Oculto por defecto, se muestra con body.authenticated */
 }
 
 .sidebar-menu {
@@ -197,6 +208,7 @@ body {
     margin-left: 260px;
     padding: 20px;
     transition: all 0.3s ease;
+    display: none; /* Oculto por defecto */
 }
 
 .top-bar {
@@ -1146,10 +1158,23 @@ body {
 
 }
 
-/* Controlar visibilidad de contenedores de autenticación */
-#authContainer {        display: block;
-    }
+/* --- LÓGICA DE VISIBILIDAD Y ESTADOS (Integrado desde HTML) --- */
 
-#appContainer {
-        display: none; /* Oculto por defecto hasta que el usuario inicie sesión */
+/* Mostrar contenido solo tras autenticación */
+body.authenticated .sidebar,
+body.authenticated .main-content {
+    display: block !important;
 }
+
+/* ESTILOS DE GESTIÓN DE TAREAS */
+.task-row-pdte-revision { background-color: #fff3cd !important; } /* Amarillo - Cálido */
+.task-row-iniciada { background-color: #cff4fc !important; } /* Azul claro */
+.task-row-finalizado { background-color: #d1e7dd !important; } /* Verde */
+.task-row-finalizado-parcial { background-color: #d1e7dd !important; } /* Verde */
+.task-row-rehusado { background-color: #f8d7da !important; } /* Rojo */
+.task-row-datos-no-validos { background-color: #e2d9f3 !important; } /* Morado claro */
+
+/* Celdas específicas */
+.cell-date-today { background-color: #dc3545 !important; color: white !important; font-weight: bold; border-radius: 4px; padding: 2px 5px; }
+.cell-recobrado-purple { color: #6f42c1 !important; font-weight: bold; }
+.task-row-finalizado-parcial .cell-recobrado { background-color: #6f42c1 !important; color: white !important; border-radius: 4px; }
