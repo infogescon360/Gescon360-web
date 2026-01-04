@@ -1712,6 +1712,32 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
       }
     }
 
+    // --- NUEVA LÓGICA: Redistribuir Tareas asignadas por nombre (String) ---
+    // Esto cubre las tareas creadas manualmente en "Gestión de Tareas"
+    const unavailableNames = unavailableUsers.flatMap(u => [u.full_name, u.email]).filter(Boolean);
+    
+    if (unavailableNames.length > 0) {
+        const { data: tasksOnly } = await supabaseAdmin
+            .from('tareas')
+            .select('id')
+            .in('responsable', unavailableNames)
+            .not('estado', 'in', '("Completada","Recobrado","Archivado","Rehusado NO cobertura")');
+
+        if (tasksOnly && tasksOnly.length > 0) {
+            for (let i = 0; i < tasksOnly.length; i++) {
+                const targetUser = activeUsers[i % activeUsers.length];
+                const targetName = targetUser.full_name || targetUser.email;
+                
+                await supabaseAdmin
+                    .from('tareas')
+                    .update({ responsable: targetName })
+                    .eq('id', tasksOnly[i].id);
+                
+                totalRedistributed++;
+            }
+        }
+    }
+
     console.log(`✓ Redistribuidas ${totalRedistributed} tareas automáticamente`);
 
     res.json({
