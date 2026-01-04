@@ -1794,386 +1794,186 @@ async function processAllDuplicates() {
         // Eliminar todos de la tabla duplicados
         await supabaseClient.from('duplicados').delete().not('id', 'is', null);
 
-        // Generar tareas para los duplicados procesados (como si fueran importados)
-        if (processedExpedients.length > 0) {
-             const distribuirEquitativamente = document.getElementById('autoDistributeImport')?.checked ?? true;
-             await distribuirTareasImportadas(processedExpedients, distribuirEquitativamente);
-        }
-
-        showToast('success', 'Procesado', `${duplicates.length} duplicados han sido procesados y fusionados.`);
+        showToast('success', 'Procesado', `Se han procesado ${processedExpedients.length} duplicados.`);
         loadDuplicates();
+        loadDashboardStats();
     } catch (error) {
-        console.error('Error processing duplicates:', error);
-        showToast('danger', 'Error', 'Error al procesar duplicados: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function deleteAllDuplicates() {
-    if (!confirm('¿Eliminar permanentemente todos los registros de la bandeja de duplicados?\n\nLos expedientes originales NO se verán afectados.')) return;
-
-    showLoading();
-    try {
-        const { error } = await supabaseClient
-            .from('duplicados')
-            .delete()
-            .not('id', 'is', null);
-
-        if (error) throw error;
-
-        showToast('success', 'Eliminado', 'Todos los duplicados han sido eliminados.');
-        loadDuplicates();
-    } catch (error) {
-        console.error('Error deleting duplicates:', error);
-        showToast('danger', 'Error', 'Error al eliminar duplicados: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function processDuplicate(id) {
-    if (!confirm('¿Fusionar este duplicado con el expediente original?\n\nSe actualizarán los datos del expediente existente con la información de este registro.')) return;
-    
-    showLoading();
-    try {
-        // Obtener datos del duplicado
-        const { data: dup, error: fetchError } = await supabaseClient
-            .from('duplicados')
-            .select('*')
-            .eq('id', id)
-            .single();
-            
-        if (fetchError) throw fetchError;
-        
-        // Excluir created_at
-        const { id: dupId, fecha_deteccion, veces_repetido, created_at, ...expedientData } = dup;
-        
-        // Actualizar expediente
-        // FIX: Reemplazar upsert con check/update/insert manual
-        let upsertError = null;
-        const { data: existing } = await supabaseClient
-            .from('expedientes')
-            .select('id')
-            .eq('num_siniestro', expedientData.num_siniestro)
-            .maybeSingle();
-
-        if (existing) {
-            const { error } = await supabaseClient.from('expedientes').update(expedientData).eq('id', existing.id);
-            upsertError = error;
-        } else {
-            const { error } = await supabaseClient.from('expedientes').insert([expedientData]);
-            upsertError = error;
-        }
-            
-        if (upsertError) throw upsertError;
-        
-        // Generar tarea para el duplicado procesado
-        const distribuirEquitativamente = document.getElementById('autoDistributeImport')?.checked ?? true;
-        await distribuirTareasImportadas([expedientData], distribuirEquitativamente);
-        
-        // Borrar de duplicados
-        await supabaseClient.from('duplicados').delete().eq('id', id);
-        
-        showToast('success', 'Éxito', 'Duplicado procesado correctamente.');
-        loadDuplicates();
-    } catch (error) {
-        console.error(error);
+        console.error('Error procesando duplicados:', error);
         showToast('danger', 'Error', error.message);
     } finally {
         hideLoading();
     }
 }
 
-async function deleteDuplicate(id) {
-    if (!confirm('¿Eliminar este registro de la bandeja de duplicados?\n\nEl expediente original NO se verá afectado.')) return;
-    
-    showLoading();
-    try {
-        const { error } = await supabaseClient.from('duplicados').delete().eq('id', id);
-        if (error) throw error;
+// Función para normalizar un expediente
+function normalizarExpediente(row, fileName, index) {
+    // Helper para limpiar cadenas
+    const cleanString = (val) => {
+        if (val === null || val === undefined) return '';
+        return String(val).trim();
+    };
+
+    // Helper para parsear importes (soporta formatos 1.234,56 y 1,234.56)
+    const parseAmount = (val) => {
+        if (typeof val === 'number') return val;
+        if (!val) return 0;
         
-        showToast('success', 'Eliminado', 'Registro eliminado.');
-        loadDuplicates();
-    } catch (error) {
-        console.error(error);
-        showToast('danger', 'Error', error.message);
-    } finally {
-        hideLoading();
-    }
-}
+        let str = String(val).replace(/[€$£\s]/g, '');
+        
+        // Si tiene coma y punto, determinar cuál es el separador decimal
+        if (str.indexOf(',') > -1 && str.indexOf('.') > -1) {
+            if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+                // Formato europeo: 1.234,56 -> 1234.56
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else {
+                // Formato americano: 1,234.56 -> 1234.56
+                str = str.replace(/,/g, '');
+            }
+        } else if (str.indexOf(',') > -1) {
+            // Solo comas: asumir decimal si es formato español común
+            str = str.replace(',', '.');
+        }
+        
+        const num = parseFloat(str);
+        return isNaN(num) ? 0 : num;
+    };
 
-function addUser() {
-    console.log('Función addUser llamada');
-    const form = document.getElementById('userForm');
-    if (form) form.reset();
+    // Helper para formatear fechas
+    const formatDate = (val) => {
+        if (!val) return null;
+        
+        // Si ya es objeto Date (gracias a cellDates: true de SheetJS)
+        if (val instanceof Date) {
+            return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
+        }
+        
+        // Intentar parsear string
+        const strVal = String(val).trim();
+        
+        // Formato DD/MM/YYYY
+        if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(strVal)) {
+            const parts = strVal.split(/[\/\-]/);
+            // Asumir DD/MM/YYYY
+            const d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+            if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+        }
+        
+        // Intento genérico
+        const d = new Date(strVal);
+        return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+    };
+
+    // Extracción de campos clave
+    const numSiniestro = cleanString(row['Nº Siniestro'] || row['num_siniestro'] || row['NUM_SINIESTRO']);
     
-    document.getElementById('userId').value = '';
-    const emailInput = document.getElementById('userEmail');
-    if (emailInput) emailInput.disabled = false; // Permitir editar email al crear
-
-    const modal = document.getElementById('userModal');
-    if (modal) {
-        modal.classList.add('active');
+    // Validación crítica: Sin número de siniestro no es un expediente válido
+    if (!numSiniestro) {
+        console.warn('Registro ignorado por falta de Nº Siniestro:', row);
+        return null;
     }
+
+    // Extraer compañía del nombre del archivo (ej: Mapfre-02-12.xlsx -> Mapfre)
+    const companyName = fileName ? fileName.split('-')[0].trim() : '';
+
+    return {
+        num_siniestro: numSiniestro,
+        cia_origen: companyName,
+        num_poliza: cleanString(row['Nº Póliza'] || row['num_poliza'] || row['NUM_POLIZA']),
+        num_sgr: cleanString(row['Nº SGR'] || row['num_sgr'] || row['NUM_SGR']),
+        nombre_asegurado: cleanString(row['Asegurado'] || row['nombre_asegurado'] || row['NOMBRE']),
+        direccion_asegurado: cleanString(row['Dirección'] || row['direccion'] || row['DIRECCION']),
+        cp: cleanString(row['CP'] || row['codigo_postal']),
+        importe: parseAmount(row['Importe'] || row['importe']),
+        fecha_ocurrencia: formatDate(row['Fecha Ocurrencia'] || row['fecha_ocurrencia']),
+        tipo_dano: cleanString(row['Tipo Daño'] || row['tipo_dano'] || row['TIPO_DAÑO']),
+        nombre_causante: cleanString(row['Causante'] || row['nombre_causante']),
+        direccion_causante: cleanString(row['Dirección Causante'] || row['direccion_causante']),
+        cia_causante
+
+        cia_causante: cleanString(row['Cía Causante'] || row['cia_causante']),
+        estado: 'Pdte. revisión',
+        fecha_inicio: new Date().toISOString().split('T')[0]
+    };
 }
-
-async function saveUser() {
-    console.log('Función saveUser llamada');
-    
-    const id = document.getElementById('userId').value;
-    const email = document.getElementById('userEmail').value;
-    const fullName = document.getElementById('userFullName').value;
-    const role = document.getElementById('userRole').value;
-    const status = document.getElementById('userStatus').value;
-
-    if (!email || !fullName) {
-        showToast('warning', 'Datos incompletos', 'El email y el nombre son obligatorios.');
-        return;
-    }
-
-    showLoading();
-    try {
-        if (id) {
-            // Actualizar usuario existente usando el nuevo endpoint del backend
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            const response = await fetch(`/admin/users/${id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
-                body: JSON.stringify({ fullName, role, status })
-            });
-            
-            if (!response.ok) throw new Error('Error al actualizar usuario');
-            
-            showToast('success', 'Actualizado', 'Usuario actualizado correctamente');
-        } else {
-            // Crear nuevo usuario (Llamada al backend)
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session) throw new Error('No hay sesión activa');
-
-            const response = await fetch('/admin/users', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
-                body: JSON.stringify({ fullName, email, role })
-            });
-
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Error al crear usuario');
-
-            alert(`Usuario creado correctamente.\n\nEmail: ${result.email}\nContraseña temporal: ${result.tempPassword}\n\nIMPORTANTE: Copie esta contraseña.`);
-            showToast('success', 'Creado', 'Usuario creado correctamente');
-        }
-
-        closeModal('userModal');
-        loadUsers();
-    } catch (error) {
-        console.error('Error saving user:', error);
-        showToast('danger', 'Error', error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function loadUsers() {
-    console.log('Cargando usuarios...');
-    const tableBody = document.getElementById('usersTable');
-    if (!tableBody) return;
-
-    showLoading();
-    try {
-        // Usar endpoint del backend para evitar errores RLS (500)
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No hay sesión activa');
-
-        const response = await fetch('/admin/users', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Error al cargar usuarios desde el servidor');
-        }
-        const users = await response.json();
-
-        tableBody.innerHTML = '';
-        if (!users || users.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="7" class="text-center p-4">No hay usuarios registrados.</td></tr>';
-        } else {
-            users.forEach(user => {
-                const row = document.createElement('tr');
-                const createdDate = user.created_at ? new Date(user.created_at).toLocaleDateString() : '-';
-                const roleClass = user.role === 'admin' ? 'unavailable' : 'proceso'; // Rojo para admin, azul para user
-                const statusClass = user.status === 'active' ? 'available' : 'archivado';
-
-                row.innerHTML = `
-                    <td><small class="text-muted">${user.id.substring(0, 8)}...</small></td>
-                    <td>${user.full_name || '-'}</td>
-                    <td>${user.email}</td>
-                    <td><span class="status-badge status-${roleClass}">${user.role}</span></td>
-                    <td><span class="status-badge status-${statusClass}">${user.status}</span></td>
-                    <td>${createdDate}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary" onclick="editUser('${user.id}')" title="Editar"><i class="bi bi-pencil"></i></button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${user.id}')" title="Eliminar"><i class="bi bi-trash"></i></button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-    } catch (error) {
-        console.error('Error loading users:', error);
-        showToast('danger', 'Error', 'Error al cargar usuarios: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function editUser(id) {
-    showLoading();
+// Función para insertar expedientes en Supabase
+async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {}) {
     try {
         const session = await supabaseClient.auth.getSession();
         if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
 
-        const response = await fetch(`/admin/users/${id}`, {
-            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-        });
-
-        if (!response.ok) {
-             const err = await response.json();
-             throw new Error(err.error || 'Error al cargar usuario');
-        }
-        const user = await response.json();
-
-        document.getElementById('userId').value = user.id;
-        document.getElementById('userEmail').value = user.email;
-        document.getElementById('userEmail').disabled = true; // No permitir cambiar email
-        document.getElementById('userFullName').value = user.full_name || '';
-        document.getElementById('userRole').value = user.role || 'user';
-        document.getElementById('userStatus').value = user.status || 'active';
-
-        const modal = document.getElementById('userModal');
-        if (modal) modal.classList.add('active');
-
-    } catch (error) {
-        console.error('Error fetching user:', error);
-        showToast('danger', 'Error', 'No se pudo cargar el usuario');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function deleteUser(id) {
-    if (!confirm('¿Eliminar permanentemente a este usuario?\n\nATENCIÓN: Sus tareas asignadas quedarán sin responsable y el acceso al sistema será revocado inmediatamente.')) return;
-
-    showLoading();
-    try {
-        const session = await supabaseClient.auth.getSession();
-        if (!session?.data?.session?.access_token) {
-            throw new Error('No hay sesión activa');
-        }
-
-        const response = await fetch(`/admin/users/${id}`, {
-            method: 'DELETE',
+        const response = await fetch('/api/expedientes/importar', {
+            method: 'POST',
             headers: {
+                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.data.session.access_token}`
-            }
+            },
+            body: JSON.stringify({ expedientes, fileName, opciones })
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Error al eliminar usuario');
+            const err = await response.json();
+            throw new Error(err.error || 'Error en el servidor al importar');
         }
 
-        showToast('success', 'Eliminado', 'Usuario eliminado correctamente');
-        loadUsers();
+        const resultados = await response.json();
+
+        return {
+            insertados: resultados.exitosos.length,
+            expedientes: resultados.exitosos,
+            tareasCreadas: resultados.tareasCreadas || 0
+        };
     } catch (error) {
-        console.error('Error deleting user:', error);
-        showToast('danger', 'Error', 'No se pudo eliminar el usuario: ' + error.message);
-    } finally {
-        hideLoading();
+        throw new Error('Error al importar expedientes: ' + error.message);
     }
 }
 
-// Función para mostrar/ocultar fecha de retorno según estado
-function toggleReturnDate() {
-    const status = document.getElementById('respStatus').value;
-    const container = document.getElementById('returnDateContainer');
-    // Mostrar solo para estados temporales (Vacaciones, Baja)
-    if (['vacation', 'sick', 'permit'].includes(status)) {
-        container.style.display = 'block';
-    } else {
-        container.style.display = 'none';
-        document.getElementById('respReturnDate').value = '';
-    }
-}
-
+// Función para cargar responsables
 async function loadResponsibles() {
     console.log('Cargando responsables...');
     showLoading();
+    const container = document.getElementById('responsiblesList');
+    if (container) container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div></div>';
+
     try {
         const session = await supabaseClient.auth.getSession();
-        if (!session?.data?.session?.access_token) {
-            throw new Error('No hay sesión activa');
-        }
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
 
         const response = await fetch('/api/responsables', {
-            headers: {
-                'Authorization': `Bearer ${session.data.session.access_token}`
-            }
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
         });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Error al cargar responsables');
-        }
-
+        if (!response.ok) throw new Error('Error cargando usuarios');
         const users = await response.json();
         usersData = users;
 
-        let tasks = [];
+        // OPTIMIZACIÓN: Usar endpoint de estadísticas
+        let stats = {};
         try {
-            const { data: t } = await supabaseClient.from('tareas').select('responsable, estado');
-            tasks = t || [];
+            const statsResponse = await fetch('/api/workload/stats', {
+                headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+            });
+            if (statsResponse.ok) stats = await statsResponse.json();
         } catch (e) {
-            console.warn('No se pudieron cargar las tareas para estadísticas:', e);
+            console.warn('No se pudieron cargar las estadísticas de tareas:', e);
         }
 
-        renderResponsiblesTable(users, tasks);
+        renderResponsiblesTable(users, stats);
     } catch (error) {
         console.error('Error loading responsibles:', error);
         showToast('danger', 'Error', error.message);
+        if (container) container.innerHTML = '<div class="alert alert-danger">Error al cargar responsables</div>';
     } finally {
         hideLoading();
     }
 }
 
-function renderResponsiblesTable(users, tasks = []) {
+function renderResponsiblesTable(users, stats = {}) {
     const container = document.getElementById('responsiblesList');
     if (!container) return;
 
     // Mapeo de estados para UI
     const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
     const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
-
-    const stats = {};
-    users.forEach(u => {
-        const name = u.full_name || u.email;
-        stats[name] = { active: 0, completed: 0 };
-    });
-
-    tasks.forEach(t => {
-        if (t.responsable && stats[t.responsable]) {
-            const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura'].includes(t.estado);
-            if (isCompleted) stats[t.responsable].completed++;
-            else stats[t.responsable].active++;
-        }
-    });
 
     container.innerHTML = '';
     if (users.length === 0) {
@@ -2183,446 +1983,41 @@ function renderResponsiblesTable(users, tasks = []) {
 
     users.forEach(user => {
         const name = user.full_name || user.email;
+        // Buscar estadísticas por nombre o email
         const userStats = stats[name] || { active: 0, completed: 0 };
+        if (!stats[name] && stats[user.email]) {
+             Object.assign(userStats, stats[user.email]);
+        }
+        
         const statusLabel = statusMap[user.status] || user.status;
         const statusClass = classMap[user.status] || 'bg-secondary';
         
-        const card = document.createElement('div');
-        card.className = 'responsible-card';
-        card.innerHTML = `
-            <div class="responsible-header">
-                <div>
-                    <div class="responsible-name">${name}</div>
-                    <div class="responsible-email">${user.email}</div>
-                </div>
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
-                        <i class="bi bi-three-dots-vertical"></i>
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="editResponsible('${user.id}')">Editar</a></li>
-                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteResponsible('${user.id}')">Eliminar</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="responsible-status">
-                <span class="status-indicator ${statusClass} text-white" style="padding: 4px 8px; border-radius: 4px;">${statusLabel}</span>
-            </div>
-            <div class="row mt-3 text-center">
-                <div class="col-6">
-                    <h3>${userStats.active}</h3>
-                    <small class="text-muted">Tareas Activas</small>
-                </div>
-                <div class="col-6">
-                    <h3>${userStats.completed}</h3>
-                    <small class="text-muted">Completadas</small>
-                </div>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-}
-
-function addResponsible() {
-    console.log('Función addResponsible llamada');
-    const form = document.getElementById('responsibleForm');
-    if (form) form.reset();
-    
-    document.getElementById('respId').value = '';
-    const emailInput = document.getElementById('respEmail');
-    if (emailInput) emailInput.disabled = false;
-    
-    toggleReturnDate(); // Resetear visibilidad
-
-    const modal = document.getElementById('responsibleModal');
-    if (modal) {
-        modal.classList.add('active');
-    }
-}
-
-async function saveResponsible() {
-    console.log('Guardando responsable...');
-    const id = document.getElementById('respId').value;
-    const email = document.getElementById('respEmail').value;
-    const fullName = document.getElementById('respName').value;
-    const status = document.getElementById('respStatus').value;
-    const role = document.getElementById('respRole').value;
-    const returnDate = document.getElementById('respReturnDate').value;
-
-    if (!email || !fullName) {
-        showToast('warning', 'Datos incompletos', 'Email y Nombre son obligatorios');
-        return;
-    }
-
-    showLoading();
-    try {
-        if (id) {
-            // Update - Usar backend para evitar error RLS
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session) throw new Error('No hay sesión activa');
-
-            const response = await fetch(`/admin/users/${id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
-                body: JSON.stringify({ fullName, status, role, returnDate })
-            });
-
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Error al actualizar responsable');
-            }
-
-            showToast('success', 'Actualizado', 'Responsable actualizado correctamente');
-        } else {
-            // Create new user via backend
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session) throw new Error('No hay sesión activa');
-
-            const response = await fetch('/admin/users', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
-                body: JSON.stringify({ fullName, email, role, status, returnDate })
-            });
-
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Error al crear usuario');
-
-            alert(`Responsable creado.\nEmail: ${result.email}\nContraseña: ${result.tempPassword}`);
-            showToast('success', 'Creado', 'Responsable creado correctamente');
-        }
-
-        closeModal('responsibleModal');
-        loadResponsibles();
-    } catch (error) {
-        console.error(error);
-        showToast('danger', 'Error', error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function editResponsible(id) {
-    showLoading();
-    try {
-        const session = await supabaseClient.auth.getSession();
-        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
-
-        const response = await fetch(`/admin/users/${id}`, {
-            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-        });
-
-        if (!response.ok) {
-             const err = await response.json();
-             throw new Error(err.error || 'Error al cargar responsable');
-        }
-        const user = await response.json();
-
-        document.getElementById('respId').value = user.id;
-        document.getElementById('respEmail').value = user.email;
-        document.getElementById('respEmail').disabled = true;
-        document.getElementById('respName').value = user.full_name || '';
-        document.getElementById('respStatus').value = user.status || 'active';
-        document.getElementById('respRole').value = user.role || 'user';
-        
-        // Cargar fecha de retorno si existe (viene en user_metadata)
-        document.getElementById('respReturnDate').value = user.return_date || '';
-        toggleReturnDate(); // Actualizar visibilidad
-
-        const modal = document.getElementById('responsibleModal');
-        if (modal) modal.classList.add('active');
-    } catch (error) {
-        console.error(error);
-        showToast('danger', 'Error', 'No se pudo cargar el responsable');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function deleteResponsible(id) {
-    if (!confirm('¿Eliminar a este responsable del sistema?\n\nSi tiene tareas asignadas, estas quedarán huérfanas hasta que se reasignen.')) return;
-    showLoading();
-    try {
-        const session = await supabaseClient.auth.getSession();
-        if (!session?.data?.session?.access_token) {
-            throw new Error('No hay sesión activa');
-        }
-
-        const response = await fetch(`/admin/users/${id}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${session.data.session.access_token}`
-            }
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Error al eliminar responsable');
-        }
-
-        showToast('success', 'Eliminado', 'Responsable eliminado');
-        loadResponsibles();
-    } catch (error) {
-        console.error(error);
-        showToast('danger', 'Error', error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function distributeWorkload() {
-    if (!confirm('¿Deseas redistribuir las tareas de usuarios NO DISPONIBLES (Baja, Vacaciones, Inactivos)?\n\nSe repartirán equitativamente entre los usuarios activos.')) {
-        return;
-    }
-
-    showLoading();
-    try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No hay sesión activa');
-
-        const response = await fetch('/admin/redistribute-tasks', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${session.access_token}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Error en la redistribución');
-        }
-
-        const data = await response.json();
-        showToast('success', 'Redistribución', data.message);
-        
-        // Recargar vista si estás en tareas o responsables
-        if (currentSection === 'tasks') {
-            loadTasks();
-        } else if (currentSection === 'admin') {
-            loadResponsibles();
-        }
-    } catch (error) {
-        console.error('Error redistribuyendo tareas:', error);
-        showToast('danger', 'Error', 'Error al redistribuir tareas: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function rebalanceActiveWorkload() {
-    showLoading();
-    try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No hay sesión activa');
-
-        // 1. Llamada de simulación
-        const simResponse = await fetch('/admin/rebalance-workload?mode=simulate', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-
-        if (!simResponse.ok) {
-            const err = await simResponse.json();
-            throw new Error(err.error || 'Error en la simulación del rebalanceo');
-        }
-
-        const simResult = await simResponse.json();
-        hideLoading();
-
-        // 2. Confirmación del usuario con datos de la simulación
-        if (simResult.movedCount === 0) {
-            showToast('info', 'Carga Equilibrada', 'La carga de trabajo ya está equilibrada. No se necesita rebalanceo.');
-            return;
-        }
-
-        const confirmationMessage = `${simResult.message}\n\n¿Deseas aplicar estos cambios?`;
-        if (!confirm(confirmationMessage)) {
-            showToast('info', 'Cancelado', 'La operación de rebalanceo ha sido cancelada.');
-            return;
-        }
-
-        // 3. Llamada de ejecución
-        showLoading();
-        const execResponse = await fetch('/admin/rebalance-workload', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-
-        if (!execResponse.ok) throw new Error((await execResponse.json()).error || 'Error en el rebalanceo');
-        const execResult = await execResponse.json();
-        showToast('success', 'Rebalanceo', execResult.message);
-        
-        const currentSectionId = document.querySelector('.content-section.active')?.id;
-        if (currentSectionId === 'admin') loadResponsibles();
-        if (currentSectionId === 'workload') loadWorkloadStats();
-
-    } catch (error) {
-        console.error('Error rebalancing:', error);
-        showToast('danger', 'Error', error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function openReassignTasksModal() {
-    console.log('Abriendo modal de reasignación...');
-    const fromSelect = document.getElementById('reassignFromUser');
-    const toSelect = document.getElementById('reassignToUser');
-    
-    if (!fromSelect || !toSelect) return;
-    
-    showLoading();
-    try {
-        // Obtener usuarios para llenar los selectores
-        // Usar /admin/users para obtener todos (activos e inactivos) sin error RLS
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        const response = await fetch('/admin/users', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        
-        if (!response.ok) throw new Error('Error cargando usuarios');
-        const users = await response.json();
-        
-        // Ordenar por nombre
-        users.sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
-        
-        const optionsHtml = users.map(u => {
-            const name = u.full_name || u.email;
-            const statusLabel = u.status === 'active' ? '' : ` (${u.status})`;
-            return `<option value="${u.id}">${name}${statusLabel}</option>`;
-        }).join('');
-        
-        fromSelect.innerHTML = '<option value="">Seleccionar usuario origen...</option>' + optionsHtml;
-        toSelect.innerHTML = '<option value="">Seleccionar usuario destino...</option>' + optionsHtml;
-        
-        const modal = document.getElementById('reassignTasksModal');
-        if (modal) modal.classList.add('active');
-        
-    } catch (error) {
-        console.error('Error loading users for reassignment:', error);
-        showToast('danger', 'Error', 'No se pudieron cargar los usuarios.');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function executeReassignment() {
-    const fromSelect = document.getElementById('reassignFromUser');
-    const toSelect = document.getElementById('reassignToUser');
-    const fromUserId = fromSelect.value;
-    const toUserId = toSelect.value;
-    
-    if (!fromUserId || !toUserId) {
-        showToast('warning', 'Datos incompletos', 'Seleccione ambos usuarios.');
-        return;
-    }
-    
-    if (fromUserId === toUserId) {
-        showToast('warning', 'Error', 'El usuario de origen y destino no pueden ser el mismo.');
-        return;
-    }
-    
-    const fromUserName = fromSelect.options[fromSelect.selectedIndex].text;
-    const toUserName = toSelect.options[toSelect.selectedIndex].text;
-    
-    if (!confirm(`¿Confirmar transferencia masiva?\n\nSe moverán TODOS los expedientes y tareas de "${fromUserName}" a "${toUserName}".`)) return;
-    
-    showLoading();
-    try {
-        const session = await supabaseClient.auth.getSession();
-        const response = await fetch('/admin/reassign-workload', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.data.session.access_token}`
-            },
-            body: JSON.stringify({ sourceUserId: fromUserId, targetUserId: toUserId })
-        });
-        
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Error en la reasignación');
-        
-        showToast('success', 'Reasignación completada', result.message);
-        closeModal('reassignTasksModal');
-        
-        // Recargar si estamos en una vista relevante
-        const currentSection = document.querySelector('.content-section.active')?.id;
-        if (currentSection === 'admin') loadResponsibles();
-        if (currentSection === 'workload') loadWorkloadStats();
-        
-    } catch (error) {
-        console.error('Error reassigning tasks:', error);
-        showToast('danger', 'Error', 'Error al reasignar tareas: ' + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-async function loadWorkloadStats() {
-    console.log('Cargando estadísticas de carga...');
-    const tableBody = document.getElementById('workloadTable');
-    if (!tableBody) return;
-
-    showLoading();
-    try {
-        // Usuarios activos
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        const response = await fetch('/api/responsables', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
         if (!response.ok) throw new Error('Error cargando usuarios');
         const users = await response.json();
 
-        // Tareas
-        const { data: tasks, error: tError } = await supabaseClient
-            .from('tareas')
-            .select('responsable, estado');
-        if (tError) throw tError;
-
-        // Calcular stats
-        const stats = {};
-        // Mapa auxiliar para buscar usuarios por email O nombre
-        const userLookup = new Map();
-
-        users.forEach(u => {
-            const name = u.full_name || u.email;
-            const statObj = { user: u, active: 0, completed: 0 };
-            stats[name] = statObj;
-            
-            if (u.email) userLookup.set(u.email, statObj);
-            if (u.full_name) userLookup.set(u.full_name, statObj);
+        // OPTIMIZACIÓN: Obtener estadísticas pre-calculadas del backend
+        const statsResponse = await fetch('/api/workload/stats', {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
-
-        tasks.forEach(t => {
-            if (t.responsable) {
-                // Intentar buscar por coincidencia exacta, email o nombre
-                const stat = userLookup.get(t.responsable) || stats[t.responsable];
-                
-                if (stat) {
-                    const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura', 'Archivado'].includes(t.estado);
-                    if (isCompleted) {
-                        stat.completed++;
-                    } else {
-                        stat.active++;
-                    }
-                }
-            }
-        });
+        
+        let workloadStats = {};
+        if (statsResponse.ok) {
+            workloadStats = await statsResponse.json();
+        }
 
         // Renderizar
         tableBody.innerHTML = '';
-        Object.values(stats).forEach(stat => {
+        users.forEach(user => {
+            const name = user.full_name || user.email;
+            const stat = workloadStats[name] || workloadStats[user.email] || { active: 0, completed: 0 };
+            
             // Calcular porcentaje relativo a un máximo arbitrario (ej. 20 tareas) o relativo al total
             const maxLoadReference = 20; 
             const percent = Math.min(100, (stat.active / maxLoadReference) * 100);
             
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${stat.user.full_name || stat.user.email}</td>
+                <td>${name}</td>
                 <td><span class="status-badge status-available">Activo</span></td>
                 <td>${stat.active}</td>
                 <td>${stat.completed}</td>
@@ -2652,6 +2047,65 @@ function resetWorkloadConfig() {
 function saveWorkloadConfig() {
     console.log('Función saveWorkloadConfig llamada');
     showToast('success', 'Guardado', 'La configuración de carga de trabajo ha sido guardada correctamente (simulado).');
+}
+
+// Función para cargar estadísticas de carga de trabajo
+async function loadWorkloadStats() {
+    console.log('Cargando estadísticas de carga de trabajo...');
+    const tableBody = document.getElementById('workloadTable');
+    if (!tableBody) return;
+
+    showLoading();
+    try {
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
+
+        const response = await fetch('/api/responsables', {
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+
+        if (!response.ok) throw new Error('Error cargando usuarios');
+        const users = await response.json();
+
+        const statsResponse = await fetch('/api/workload/stats', {
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+        
+        let workloadStats = {};
+        if (statsResponse.ok) {
+            workloadStats = await statsResponse.json();
+        }
+
+        tableBody.innerHTML = '';
+        users.forEach(user => {
+            const name = user.full_name || user.email;
+            const stat = workloadStats[name] || workloadStats[user.email] || { active: 0, completed: 0 };
+            
+            const maxLoadReference = 20; 
+            const percent = Math.min(100, (stat.active / maxLoadReference) * 100);
+            
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${name}</td>
+                <td><span class="status-badge status-available">Activo</span></td>
+                <td>${stat.active}</td>
+                <td>${stat.completed}</td>
+                <td>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-info" role="progressbar" style="width: ${percent}%"></div>
+                    </div>
+                </td>
+                <td><span class="badge bg-success">Disponible</span></td>
+            `;
+            tableBody.appendChild(row);
+        });
+
+    } catch (error) {
+        console.error(error);
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error al cargar datos</td></tr>';
+    } finally {
+        hideLoading();
+    }
 }
 
 function loadSystemLimits() {
@@ -3625,7 +3079,7 @@ function normalizarExpediente(row, fileName, index) {
 }
 
 // Función para insertar expedientes en Supabase
-async function insertarExpedientesEnSupabase(expedientes, fileName) {
+async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {}) {
     try {
         const session = await supabaseClient.auth.getSession();
         if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
@@ -3636,7 +3090,7 @@ async function insertarExpedientesEnSupabase(expedientes, fileName) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.data.session.access_token}`
             },
-            body: JSON.stringify({ expedientes, fileName })
+            body: JSON.stringify({ expedientes, fileName, opciones })
         });
 
         if (!response.ok) {
@@ -3648,7 +3102,8 @@ async function insertarExpedientesEnSupabase(expedientes, fileName) {
 
         return {
             insertados: resultados.exitosos.length,
-            expedientes: resultados.exitosos
+            expedientes: resultados.exitosos,
+            tareasCreadas: resultados.tareasCreadas || 0
         };
     } catch (error) {
         throw new Error('Error al importar expedientes: ' + error.message);

@@ -814,6 +814,48 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint optimizado para estadísticas de CARGA DE TRABAJO (Workload)
+app.get('/api/workload/stats', requireAuth, async (req, res) => {
+  try {
+    // 1. Intentar usar RPC si existe (Máxima velocidad)
+    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_workload_stats');
+    
+    if (!rpcError && rpcData) {
+      return res.json(rpcData);
+    }
+
+    // 2. Fallback: Cálculo en Node.js (Más rápido que en cliente)
+    // Solo traemos las columnas necesarias, no todo el objeto
+    const { data: tasks, error } = await supabaseAdmin
+      .from('tareas')
+      .select('responsable, estado');
+
+    if (error) throw error;
+
+    const stats = {};
+    const completedStates = new Set(['Completada', 'Recobrado', 'Rehusado NO cobertura', 'Archivado', 'Finalizado']);
+
+    (tasks || []).forEach(t => {
+      if (!t.responsable) return;
+      
+      if (!stats[t.responsable]) {
+        stats[t.responsable] = { active: 0, completed: 0 };
+      }
+
+      if (completedStates.has(t.estado)) {
+        stats[t.responsable].completed++;
+      } else {
+        stats[t.responsable].active++;
+      }
+    });
+
+    res.json(stats);
+  } catch (e) {
+    console.error('Error en /api/workload/stats:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/reportes/estadisticas', async (req, res) => {
   try {
     let queryTotal = supabase.from('expedientes').select('*', { count: 'exact', head: true });
@@ -847,7 +889,7 @@ app.get('/api/reportes/estadisticas', async (req, res) => {
 
 app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
   try {
-    const { expedientes, opciones, fileName } = req.body;
+    const { expedientes, opciones, fileName } = req.body; // opciones: { distribuirTareas, distribuirEquitativamente, ... }
     
     if (!Array.isArray(expedientes)) {
       return res.status(400).json({ error: 'Se requiere un array de expedientes' });
@@ -962,6 +1004,46 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
         exitosos = data;
     }
     
+    // 4. FASE DE DISTRIBUCIÓN DE TAREAS (Opcional)
+    let tareasCreadas = 0;
+    if (opciones?.distribuirTareas && exitosos.length > 0) {
+        // Obtener usuarios activos para reparto
+        let responsables = [];
+        if (opciones.distribuirEquitativamente) {
+            const { data: users } = await supabaseAdmin
+                .from('profiles')
+                .select('full_name, email')
+                .eq('status', 'active');
+            responsables = users || [];
+        }
+
+        // Preparar tareas
+        const tareas = exitosos.map((exp, index) => {
+            let responsable = null;
+            if (responsables.length > 0) {
+                const user = responsables[index % responsables.length];
+                responsable = user.full_name || user.email;
+            }
+
+            return {
+                num_siniestro: exp.num_siniestro,
+                responsable: responsable,
+                descripcion: `Gestión inicial del expediente ${exp.num_siniestro} (Importado)`,
+                prioridad: (exp.importe > 1500) ? 'Alta' : 'Media',
+                fecha_limite: new Date().toISOString().split('T')[0],
+                estado: 'Pdte. revisión'
+            };
+        });
+
+        // Insertar tareas en lote
+        if (tareas.length > 0) {
+            const { error: taskError } = await supabaseAdmin.from('tareas').insert(tareas);
+            if (!taskError) {
+                tareasCreadas = tareas.length;
+            }
+        }
+    }
+
     // Registrar log de importación en el servidor
     if (fileName) {
       await supabaseAdmin.from('import_logs').insert({
@@ -976,7 +1058,8 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
     res.json({
         exitosos,
         duplicados: duplicadosDB,
-        errores: erroresValidacion
+        errores: erroresValidacion,
+        tareasCreadas
     });
   } catch (e) {
     console.error('Error en importación:', e);
