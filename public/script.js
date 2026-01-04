@@ -2472,18 +2472,30 @@ async function loadWorkloadStats() {
 
         // Calcular stats
         const stats = {};
+        // Mapa auxiliar para buscar usuarios por email O nombre
+        const userLookup = new Map();
+
         users.forEach(u => {
             const name = u.full_name || u.email;
-            stats[name] = { user: u, active: 0, completed: 0 };
+            const statObj = { user: u, active: 0, completed: 0 };
+            stats[name] = statObj;
+            
+            if (u.email) userLookup.set(u.email, statObj);
+            if (u.full_name) userLookup.set(u.full_name, statObj);
         });
 
         tasks.forEach(t => {
-            if (t.responsable && stats[t.responsable]) {
-                const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura'].includes(t.estado);
-                if (isCompleted) {
-                    stats[t.responsable].completed++;
-                } else {
-                    stats[t.responsable].active++;
+            if (t.responsable) {
+                // Intentar buscar por coincidencia exacta, email o nombre
+                const stat = userLookup.get(t.responsable) || stats[t.responsable];
+                
+                if (stat) {
+                    const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura', 'Archivado'].includes(t.estado);
+                    if (isCompleted) {
+                        stat.completed++;
+                    } else {
+                        stat.active++;
+                    }
                 }
             }
         });

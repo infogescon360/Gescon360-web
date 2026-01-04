@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
+import * as XLSX from 'xlsx';
 
 const app = express();
 
@@ -25,6 +26,7 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ? process.env.SUPABASE_A
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.trim() : '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY ? process.env.SUPABASE_KEY.trim() : '';
 const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'jesus.mp@gescon360.es';
+const CRON_SECRET = process.env.CRON_SECRET || 'gescon360_cron_secret_key';
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_KEY) {
   console.error('ERROR: Faltan variables de entorno requeridas');
@@ -1989,6 +1991,104 @@ app.post('/admin/reassign-workload', requireAuth, async (req, res) => {
 
   } catch (e) {
     console.error('Error en /admin/reassign-workload:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint para CRON: Generar y enviar reporte de carga de trabajo (Excel)
+app.post('/api/cron/send-workload-report', async (req, res) => {
+  try {
+    // Verificar secreto del Cron Job para seguridad
+    const authHeader = req.headers['x-cron-secret'];
+    if (authHeader !== CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized Cron Request' });
+    }
+
+    console.log('Iniciando generación de reporte de carga de trabajo...');
+
+    // 1. Obtener datos (Usuarios y Tareas)
+    const { data: users, error: uError } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (uError) throw uError;
+
+    const { data: tasks, error: tError } = await supabaseAdmin
+      .from('tareas')
+      .select('responsable, estado, prioridad, fecha_limite');
+    if (tError) throw tError;
+
+    // 2. Procesar estadísticas
+    const activeUsers = [];
+    const statsMap = new Map();
+
+    // Filtrar usuarios activos y preparar mapa
+    for (const u of users.users) {
+      const meta = u.user_metadata || {};
+      if (meta.status === 'active') {
+        const name = meta.full_name || u.email;
+        activeUsers.push({ email: u.email, name });
+        
+        const statObj = { name, email: u.email, active: 0, completed: 0, highPriority: 0 };
+        statsMap.set(name, statObj);
+        // Mapear también por email para asegurar coincidencia
+        if (name !== u.email) statsMap.set(u.email, statObj);
+      }
+    }
+
+    // Contar tareas
+    (tasks || []).forEach(t => {
+      if (t.responsable && statsMap.has(t.responsable)) {
+        const stat = statsMap.get(t.responsable);
+        const isCompleted = ['Completada', 'Recobrado', 'Rehusado NO cobertura', 'Archivado'].includes(t.estado);
+        
+        if (isCompleted) {
+          stat.completed++;
+        } else {
+          stat.active++;
+          if (t.prioridad === 'Alta') stat.highPriority++;
+        }
+      }
+    });
+
+    // 3. Generar Excel
+    // Convertir Map a Array único (eliminando duplicados de referencia email/nombre)
+    const reportData = Array.from(new Set(statsMap.values())).map(s => ({
+      'Responsable': s.name,
+      'Email': s.email,
+      'Tareas Activas': s.active,
+      'Prioridad Alta': s.highPriority,
+      'Completadas': s.completed,
+      'Carga Total': s.active + s.completed
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(reportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Carga de Trabajo");
+
+    // Generar buffer base64 para adjuntar
+    const excelBuffer = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+
+    // 4. Enviar Emails a cada usuario activo
+    const dateStr = new Date().toLocaleDateString('es-ES');
+    let sentCount = 0;
+
+    for (const user of activeUsers) {
+      const { error: mailError } = await supabaseAdmin.functions.invoke('send-email', {
+        body: {
+          to: user.email,
+          subject: `📊 Reporte Diario de Carga de Trabajo - ${dateStr}`,
+          html: `<p>Hola ${user.name},</p><p>Adjunto encontrarás el reporte actualizado de distribución de carga de trabajo del equipo.</p>`,
+          attachments: [{
+            filename: `Carga_Trabajo_${dateStr.replace(/\//g, '-')}.xlsx`,
+            content: excelBuffer,
+            encoding: 'base64'
+          }]
+        }
+      });
+      if (!mailError) sentCount++;
+    }
+
+    res.json({ success: true, sent: sentCount, total: activeUsers.length });
+  } catch (e) {
+    console.error('Error en cron reporte carga:', e);
     res.status(500).json({ error: e.message });
   }
 });

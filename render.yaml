@@ -19,3 +19,12 @@ services:
     image: curlimages/curl
     schedule: "0 8 * * *" # Ejecutar diariamente a las 08:00 UTC
     command: curl -s -f https://gescon360-web.onrender.com/health/supabase
+
+  # 3. Cron Job para Reporte Diario de Carga de Trabajo
+  # Genera Excel y envía email a todos los usuarios activos
+  - type: cron
+    name: daily-workload-report
+    env: image
+    image: curlimages/curl
+    schedule: "0 7 * * *" # Ejecutar diariamente a las 07:00 UTC
+    command: curl -X POST -H "x-cron-secret: gescon360_cron_secret_key" https://gescon360-web.onrender.com/api/cron/send-workload-report
