@@ -2324,28 +2324,51 @@ async function distributeWorkload() {
 }
 
 async function rebalanceActiveWorkload() {
-    if (!confirm('¿Deseas rebalancear la carga de trabajo entre los usuarios activos?\n\nSe moverán tareas de los usuarios más saturados a los que tienen menos carga para igualar el promedio.')) return;
-
     showLoading();
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('No hay sesión activa');
 
-        const response = await fetch('/admin/rebalance-workload', {
+        // 1. Llamada de simulación
+        const simResponse = await fetch('/admin/rebalance-workload?mode=simulate', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
 
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Error en el rebalanceo');
+        if (!simResponse.ok) {
+            const err = await simResponse.json();
+            throw new Error(err.error || 'Error en la simulación del rebalanceo');
         }
 
-        const result = await response.json();
-        showToast('success', 'Rebalanceo', result.message);
+        const simResult = await simResponse.json();
+        hideLoading();
+
+        // 2. Confirmación del usuario con datos de la simulación
+        if (simResult.movedCount === 0) {
+            showToast('info', 'Carga Equilibrada', 'La carga de trabajo ya está equilibrada. No se necesita rebalanceo.');
+            return;
+        }
+
+        const confirmationMessage = `${simResult.message}\n\n¿Deseas aplicar estos cambios?`;
+        if (!confirm(confirmationMessage)) {
+            showToast('info', 'Cancelado', 'La operación de rebalanceo ha sido cancelada.');
+            return;
+        }
+
+        // 3. Llamada de ejecución
+        showLoading();
+        const execResponse = await fetch('/admin/rebalance-workload', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (!execResponse.ok) throw new Error((await execResponse.json()).error || 'Error en el rebalanceo');
+        const execResult = await execResponse.json();
+        showToast('success', 'Rebalanceo', execResult.message);
         
-        if (currentSection === 'admin') loadResponsibles();
-        if (currentSection === 'workload') loadWorkloadStats();
+        const currentSectionId = document.querySelector('.content-section.active')?.id;
+        if (currentSectionId === 'admin') loadResponsibles();
+        if (currentSectionId === 'workload') loadWorkloadStats();
 
     } catch (error) {
         console.error('Error rebalancing:', error);

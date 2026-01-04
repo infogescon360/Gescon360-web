@@ -1758,6 +1758,8 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
 // Endpoint para REBALANCEO DE CARGA ACTIVA (Nivelación entre usuarios activos)
 app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
   try {
+    const { mode } = req.query;
+    const isSimulation = mode === 'simulate';
     const user = req.user;
     
     // Verificar permisos
@@ -1860,32 +1862,41 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
         // Asignar
         const targetName = target.user.full_name || target.user.email;
         
-        // A. Actualizar Tarea
-        const { error: updateError } = await supabaseAdmin
-            .from('tareas')
-            .update({ responsable: targetName })
-            .eq('id', taskToMove.id);
+        if (!isSimulation) {
+            // A. Actualizar Tarea
+            const { error: updateError } = await supabaseAdmin
+                .from('tareas')
+                .update({ responsable: targetName })
+                .eq('id', taskToMove.id);
 
-        if (!updateError) {
-            movedCount++;
-            target.tasks.push(taskToMove); // Actualizar carga en memoria
-            
-            // B. Sincronizar Expediente (si aplica)
-            if (taskToMove.num_siniestro) {
-                await supabaseAdmin
-                    .from('expedientes')
-                    .update({ gestor_id: target.user.id })
-                    .eq('num_siniestro', taskToMove.num_siniestro);
+            if (!updateError) {
+                // B. Sincronizar Expediente (si aplica)
+                if (taskToMove.num_siniestro) {
+                    await supabaseAdmin
+                        .from('expedientes')
+                        .update({ gestor_id: target.user.id })
+                        .eq('num_siniestro', taskToMove.num_siniestro);
+                }
             }
         }
+
+        movedCount++;
+        target.tasks.push(taskToMove); // Actualizar carga en memoria para el cálculo
 
         // Avanzar al siguiente usuario (Round Robin) para reparto equitativo
         userIndex = (userIndex + 1) % sortedUsers.length;
     }
 
+    const message = isSimulation
+        ? `Simulación: Se moverían ${movedCount} tareas. Carga promedio: ~${averageLoad}.`
+        : `Rebalanceo completado. Se movieron ${movedCount} tareas. Carga promedio: ~${averageLoad}.`;
+
     res.json({ 
         success: true, 
-        message: `Rebalanceo completado. Se movieron ${movedCount} tareas. Carga promedio: ~${averageLoad}.` 
+        message: message,
+        isSimulation: isSimulation,
+        movedCount: movedCount,
+        averageLoad: averageLoad
     });
 
   } catch (e) {
