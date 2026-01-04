@@ -1781,87 +1781,111 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
       return res.json({ success: false, message: 'Se necesitan al menos 2 usuarios activos para rebalancear.' });
     }
 
-    // 2. Obtener expedientes activos asignados
-    const { data: expedientes, error: expError } = await supabaseAdmin
-      .from('expedientes')
-      .select('id, gestor_id, num_siniestro, fecha_seguimiento')
-      .in('estado', ['Pendiente', 'En proceso', 'Pdte. revisión', 'En gestión'])
-      .not('gestor_id', 'is', null);
+    // 2. Obtener TODAS las TAREAS activas (Fuente de verdad)
+    const { data: tasks, error: taskError } = await supabaseAdmin
+      .from('tareas')
+      .select('id, responsable, num_siniestro, fecha_limite, prioridad')
+      .not('estado', 'in', '("Completada","Recobrado","Archivado","Rehusado NO cobertura")');
 
-    if (expError) throw expError;
+    if (taskError) throw taskError;
 
-    // Definir fecha límite para no mover urgentes (Hoy + Mañana)
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const limitStr = tomorrow.toISOString().split('T')[0];
+    // 3. Preparar estructuras de datos
+    const userMap = new Map(); // Nombre/Email -> ID Usuario
+    const workload = {}; // ID Usuario -> { user, tasks: [] }
 
-    // 3. Calcular carga
-    const workload = {};
-    activeUsers.forEach(u => workload[u.id] = { total: 0, movable: [] });
-    
-    const activeUserIds = new Set(activeUsers.map(u => u.id));
-    expedientes.forEach(exp => {
-        if (activeUserIds.has(exp.gestor_id)) {
-            const isUrgent = exp.fecha_seguimiento && exp.fecha_seguimiento <= limitStr;
-            workload[exp.gestor_id].total++;
-            if (!isUrgent) workload[exp.gestor_id].movable.push(exp);
-        }
-    });
-
-    const totalTasks = Object.values(workload).reduce((acc, obj) => acc + obj.total, 0);
-    const average = Math.floor(totalTasks / activeUsers.length);
-
-    // 4. Identificar movimientos (Sobrecargados -> Subcargados)
-    const overloaded = [];
-    const underloaded = [];
-
+    // Inicializar workload para usuarios activos
     activeUsers.forEach(u => {
-        const load = workload[u.id];
-        if (load.total > average) {
-            overloaded.push({ user: u, tasks: load.movable, excess: load.total - average });
-        } else if (load.total < average) {
-            underloaded.push({ user: u, deficit: average - load.total });
+        workload[u.id] = { user: u, tasks: [] };
+        if (u.full_name) userMap.set(u.full_name, u.id);
+        if (u.email) userMap.set(u.email, u.id);
+    });
+
+    // Definir fecha límite para identificar urgentes (Hoy)
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    // 4. Asignar tareas a usuarios
+    const unassignedTasks = []; // Tareas de usuarios inactivos o sin asignar
+
+    tasks.forEach(t => {
+        if (t.responsable && userMap.has(t.responsable)) {
+            const userId = userMap.get(t.responsable);
+            workload[userId].tasks.push(t);
+        } else {
+            // Si el responsable no está en la lista de activos, la tarea es candidata a redistribución
+            unassignedTasks.push(t);
         }
     });
 
-    let movedCount = 0;
+    // 5. Calcular Promedio Ideal
+    // Incluimos las tareas no asignadas en el total para repartirlas también
+    const totalLoad = Object.values(workload).reduce((acc, w) => acc + w.tasks.length, 0) + unassignedTasks.length;
+    const averageLoad = Math.floor(totalLoad / activeUsers.length);
 
-    // 5. Redistribuir
-    for (const source of overloaded) {
-        while (source.excess > 0 && source.tasks.length > 0 && underloaded.length > 0) {
-            const target = underloaded[0];
-            const expToMove = source.tasks.pop(); // Tomar uno del exceso
+    console.log(`Rebalanceo: Total Tareas=${totalLoad}, Usuarios=${activeUsers.length}, Promedio=${averageLoad}`);
+
+    // 6. Recolectar Exceso (Pool de Redistribución)
+    let redistributionPool = [...unassignedTasks]; // Empezamos con las huérfanas
+
+    Object.values(workload).forEach(w => {
+        if (w.tasks.length > averageLoad) {
+            const excessCount = w.tasks.length - averageLoad;
             
-            const { error: updateError } = await supabaseAdmin
-                .from('expedientes')
-                .update({ gestor_id: target.user.id })
-                .eq('id', expToMove.id);
+            // Ordenar tareas: Mover primero las que NO son urgentes (fecha límite lejana)
+            // Las urgentes (hoy/mañana) se quedan con el dueño actual para no interrumpir
+            w.tasks.sort((a, b) => {
+                const dateA = a.fecha_limite || '9999-99-99';
+                const dateB = b.fecha_limite || '9999-99-99';
+                // Descendente: Las fechas más lejanas primero (candidatas a mover)
+                return dateB.localeCompare(dateA);
+            });
 
-            if (!updateError) {
-                movedCount++;
-                // Sincronizar Tareas
-                const numSiniestro = expToMove.num_siniestro;
-                if (numSiniestro) {
-                    const targetName = target.user.full_name || target.user.email;
-                    await supabaseAdmin
-                        .from('tareas')
-                        .update({ responsable: targetName })
-                        .eq('num_siniestro', numSiniestro)
-                        .not('estado', 'in', '("Completada","Archivado","Recobrado")');
-                }
-            }
-
-            source.excess--;
-            target.deficit--;
-
-            if (target.deficit === 0) underloaded.shift();
+            // Tomar el exceso
+            const tasksToMove = w.tasks.splice(0, excessCount);
+            redistributionPool = redistributionPool.concat(tasksToMove);
         }
+    });
+
+    // 7. Repartir el Pool entre usuarios con carga baja
+    // Ordenar usuarios por carga actual (ascendente)
+    const sortedUsers = Object.values(workload).sort((a, b) => a.tasks.length - b.tasks.length);
+    
+    let movedCount = 0;
+    let userIndex = 0;
+
+    while (redistributionPool.length > 0) {
+        const taskToMove = redistributionPool.pop();
+        const target = sortedUsers[userIndex];
+        
+        // Asignar
+        const targetName = target.user.full_name || target.user.email;
+        
+        // A. Actualizar Tarea
+        const { error: updateError } = await supabaseAdmin
+            .from('tareas')
+            .update({ responsable: targetName })
+            .eq('id', taskToMove.id);
+
+        if (!updateError) {
+            movedCount++;
+            target.tasks.push(taskToMove); // Actualizar carga en memoria
+            
+            // B. Sincronizar Expediente (si aplica)
+            if (taskToMove.num_siniestro) {
+                await supabaseAdmin
+                    .from('expedientes')
+                    .update({ gestor_id: target.user.id })
+                    .eq('num_siniestro', taskToMove.num_siniestro);
+            }
+        }
+
+        // Avanzar al siguiente usuario (Round Robin) para reparto equitativo
+        userIndex = (userIndex + 1) % sortedUsers.length;
     }
 
     res.json({ 
         success: true, 
-        message: `Rebalanceo completado. Se movieron ${movedCount} expedientes. Promedio aprox: ${average}.` 
+        message: `Rebalanceo completado. Se movieron ${movedCount} tareas. Carga promedio: ~${averageLoad}.` 
     });
 
   } catch (e) {
