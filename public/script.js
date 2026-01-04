@@ -28,6 +28,90 @@ let SUPABASE_ANON_KEY = null;
 // Inicializar Supabase
 let supabaseClient = null;
 
+// ============================================
+// CONFIGURACIÓN DE PERMISOS POR ROL
+// ============================================
+
+const PERMISSIONS = {
+    user: {
+        // Módulos permitidos para usuarios normales (IDs usados en showSection)
+        allowedPages: [
+            'dashboard',
+            'import',
+            'tasks',
+            'duplicates',
+            'archive'
+        ],
+        // Capacidades
+        canSearch: true,
+        canViewExpediente: true,
+        canEditExpediente: false,
+        canDeleteExpediente: false,
+        // Accesos específicos (redundante con allowedPages pero útil para lógica UI)
+        canAccessReports: false,
+        canAccessConfig: false
+    },
+    admin: {
+        // Administradores tienen acceso total
+        allowedPages: ['*'], 
+        canSearch: true,
+        canViewExpediente: true,
+        canEditExpediente: true,
+        canDeleteExpediente: true,
+        canAccessReports: true,
+        canAccessConfig: true
+    }
+};
+
+// ============================================
+// FUNCIONES PARA VERIFICAR PERMISOS
+// ============================================
+
+function checkPermission(permission) {
+    if (!currentUser) return false;
+    if (currentUser.isAdmin) return true; // Admin puede todo
+    
+    const permissions = PERMISSIONS['user'];
+    return permissions[permission] === true;
+}
+
+function isPageAllowed(pageName) {
+    if (!currentUser) return false;
+    if (currentUser.isAdmin) return true;
+
+    const allowedPages = PERMISSIONS['user'].allowedPages;
+    return allowedPages.includes(pageName);
+}
+
+// Función para controlar visibilidad del menú según rol
+function applyMenuAccessControl() {
+    // Selectores basados en los onclick del HTML
+    const restrictedSelectors = [
+        'a[onclick="showSection(\'reports\')"]',
+        'a[onclick="showSection(\'config\')"]'
+    ];
+    
+    const adminSection = document.querySelector('.admin-section');
+
+    if (!currentUser || !currentUser.isAdmin) {
+        // Ocultar sección completa de administración
+        if (adminSection) adminSection.style.display = 'none';
+        
+        // Ocultar enlaces específicos restringidos
+        restrictedSelectors.forEach(selector => {
+            const el = document.querySelector(selector);
+            if (el && el.parentElement) el.parentElement.style.display = 'none';
+        });
+    } else {
+        // Mostrar todo para admin
+        if (adminSection) adminSection.style.display = 'block';
+        restrictedSelectors.forEach(selector => {
+            const el = document.querySelector(selector);
+            if (el && el.parentElement) el.parentElement.style.display = '';
+        });
+    }
+}
+
 // Función para cargar configuración y arrancar
 async function initAppConfig() {
     try {
@@ -693,6 +777,12 @@ async function logout() {
 
 // Muestra una sección específica y oculta las demás
 function showSection(sectionId) {
+    // Verificar permisos antes de mostrar la sección
+    if (typeof isPageAllowed === 'function' && !isPageAllowed(sectionId)) {
+        showToast('danger', 'Acceso Denegado', 'No tienes permisos para acceder a esta sección.');
+        return;
+    }
+
     // Oculta todas las secciones
     document.querySelectorAll('.content-section').forEach(section => {
         section.classList.remove('active');
