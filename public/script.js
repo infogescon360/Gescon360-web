@@ -1,3 +1,4 @@
+
 /*
  * =============================================================================
  * GESCON 360 - Frontend JavaScript
@@ -21,21 +22,10 @@ function hideAllContent() {
 hideAllContent();
 
 // --- CONFIGURACIÓN DE SUPABASE (CLAVES PÚBLICAS) ---
-<<<<<<< HEAD
 // Las claves se cargarán dinámicamente desde config.js o el backend
 let SUPABASE_URL = null;
 let SUPABASE_ANON_KEY = null;
-
 // Inicializar Supabase
-=======
-// REEMPLAZA ESTOS VALORES CON TUS CLAVES PÚBLICAS REALES DE SUPABASE
-const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
-YmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZS
-I6ImFub24iLCJpYXQiOjE3MzY5MzU4NjAsImV4cCI6MjA1MjUxMTg2
-MH0.9gKULscIrNNp3rCNQ0ChCABXye9061iQTTQ83_UdJ64';
-
->>>>>>> 27ecf667d3bcb173192786104cc67bcbf0ba0d05
 let supabaseClient = null;
 
 // Función para cargar configuración y arrancar
