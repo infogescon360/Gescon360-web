@@ -24,6 +24,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL ? process.env.SUPABASE_URL.trim() 
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ? process.env.SUPABASE_ANON_KEY.trim() : '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.trim() : '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY ? process.env.SUPABASE_KEY.trim() : '';
+const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'jesus.mp@gescon360.es';
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_KEY) {
   console.error('ERROR: Faltan variables de entorno requeridas');
@@ -1220,7 +1221,7 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     const user = req.user;
 
     // Verificar que el usuario es admin
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
       // Verificar en app_metadata en lugar de la tabla profiles
       const appMeta = user.app_metadata || {};
@@ -1273,7 +1274,7 @@ app.post('/admin/users', async (req, res) => {
     }
 
     // Permitir siempre al super admin (jesus.mp@gescon360.es) incluso si falla el perfil
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
 
     if (!isSuperAdmin) {
       const { data: profile, error: profileError } = await supabaseAdmin
@@ -1385,7 +1386,7 @@ app.get('/admin/users/:id', requireAuth, async (req, res) => {
     const targetUserId = req.params.id;
 
     // Verificar permisos
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
        const appMeta = user.app_metadata || {};
        if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
@@ -1423,7 +1424,7 @@ app.delete('/admin/users/:id', requireAuth, async (req, res) => {
     const targetUserId = req.params.id;
 
     // Verificar que el usuario es admin
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
       const appMeta = user.app_metadata || {};
       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
@@ -1488,7 +1489,7 @@ app.put('/admin/users/:id', requireAuth, async (req, res) => {
     const { fullName, role, status, returnDate } = req.body;
 
     // Verificar permisos
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
        const appMeta = user.app_metadata || {};
        if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
@@ -1537,7 +1538,7 @@ app.post('/admin/users/reactivate', requireAuth, async (req, res) => {
   try {
     const user = req.user;
     // Verificar permisos (admin o sistema)
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
        const appMeta = user.app_metadata || {};
        if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) return res.status(403).json({ error: 'No autorizado' });
@@ -1581,7 +1582,7 @@ app.post('/admin/redistribute-tasks', requireAuth, async (req, res) => {
     const user = req.user;
     
     // Solo admins pueden redistribuir
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
       const appMeta = user.app_metadata || {};
       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
@@ -1685,7 +1686,7 @@ app.post('/admin/rebalance-workload', requireAuth, async (req, res) => {
     const user = req.user;
     
     // Verificar permisos
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
       const appMeta = user.app_metadata || {};
       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
@@ -1846,7 +1847,7 @@ app.post('/admin/reassign-workload', requireAuth, async (req, res) => {
     const { sourceUserId, targetUserId } = req.body;
 
     // Verificar permisos de admin
-    const isSuperAdmin = user.email === 'jesus.mp@gescon360.es';
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
     if (!isSuperAdmin) {
       const appMeta = user.app_metadata || {};
       if (appMeta.role !== 'admin' && appMeta.is_super_admin !== true) {
@@ -1924,7 +1925,7 @@ app.post('/admin/migrate-roles', requireAuth, async (req, res) => {
   try {
     const user = req.user;
     // Protección extra: solo el super admin principal puede ejecutar esto
-    if (user.email !== 'jesus.mp@gescon360.es') {
+    if (user.email !== SUPER_ADMIN_EMAIL) {
       return res.status(403).json({ error: 'Acceso denegado. Solo super admin.' });
     }
 

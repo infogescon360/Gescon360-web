@@ -553,12 +553,6 @@ async function login() {
         return;
     }
 
-    // Validar usuario administrador principal
-    if (email !== 'jesus.mp@gescon360.es') {
-        showToast('danger', 'Acceso restringido', 'En esta fase solo está autorizado el usuario jesus.mp@gescon360.es');
-        return;
-    }
-
 
     console.log('Login attempt with email:', email);
 
@@ -737,7 +731,7 @@ function showSection(sectionId) {
         if (sectionId === 'admin') loadResponsibles();
         if (sectionId === 'limits') loadSystemLimits();
         if (sectionId === 'config') loadGeneralConfig();
-        if (sectionId === 'reports') loadReports();
+        // if (sectionId === 'reports') loadReports(); // Desactivado para evitar carga automática lenta
         if (sectionId === 'import') loadImportLogs();
     }
 }
