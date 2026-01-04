@@ -21,18 +21,39 @@ function hideAllContent() {
 hideAllContent();
 
 // --- CONFIGURACIÓN DE SUPABASE (CLAVES PÚBLICAS) ---
-// REEMPLAZA ESTOS VALORES CON TUS CLAVES PÚBLICAS REALES DE SUPABASE
-const SUPABASE_URL = 'https://bytvzgxcemhlnuggwqno.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dHZ6Z3hjZW1obG51Z2d3cW5vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4MzQwNjIsImV4cCI6MjA1MTQxMDA2Mn0.zsSInJlzlj61mJE5dhZ6z3hZUlokG5lZ2d3cuSvlJwi';
+// Las claves se cargarán dinámicamente desde config.js o el backend
+let SUPABASE_URL = null;
+let SUPABASE_ANON_KEY = null;
+
 // Inicializar Supabase
 let supabaseClient = null;
 
 // Función para cargar configuración y arrancar
 async function initAppConfig() {
     try {
-        // VALIDACIÓN: Asegurarse de que las claves se han reemplazado
-        if (SUPABASE_URL.includes('URL_PUBLICA') || SUPABASE_ANON_KEY.includes('ANON_KEY')) {
-            throw new Error('Las claves públicas de Supabase no han sido configuradas en script.js. Por favor, edita el archivo y reemplaza los valores de placeholder.');
+        // 1. Intentar cargar desde archivo de configuración local (config.js)
+        if (window.GESCON_CONFIG) {
+            SUPABASE_URL = window.GESCON_CONFIG.SUPABASE_URL;
+            SUPABASE_ANON_KEY = window.GESCON_CONFIG.SUPABASE_ANON_KEY;
+        }
+
+        // 2. Si no hay config local, intentar obtener del backend (Variables de Entorno)
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+            try {
+                const response = await fetch('/api/config');
+                if (response.ok) {
+                    const config = await response.json();
+                    SUPABASE_URL = config.SUPABASE_URL;
+                    SUPABASE_ANON_KEY = config.SUPABASE_ANON_KEY;
+                }
+            } catch (e) {
+                console.warn('No se pudo obtener configuración del servidor, verificando configuración local...');
+            }
+        }
+
+        // VALIDACIÓN: Asegurarse de que tenemos las claves
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes('URL_PUBLICA')) {
+            throw new Error('Las claves de Supabase no están configuradas. Asegúrate de cargar config.js o configurar el backend.');
         }
 
         // Inicializar cliente
