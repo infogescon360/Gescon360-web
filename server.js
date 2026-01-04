@@ -2083,7 +2083,11 @@ app.post('/api/cron/send-workload-report', async (req, res) => {
           }]
         }
       });
-      if (!mailError) sentCount++;
+      if (!mailError) {
+        sentCount++;
+      } else {
+        console.error(`Error enviando reporte a ${user.email}:`, mailError);
+      }
     }
 
     res.json({ success: true, sent: sentCount, total: activeUsers.length });
