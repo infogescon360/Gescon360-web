@@ -52,9 +52,13 @@ async function apiRequest(endpoint, options = {}) {
  * @param {string} type - Tipo: 'success', 'error', 'warning', 'info'
  */
 function showNotification(message, type = 'info') {
+    // Mapear 'error' a 'danger' para coincidir con los estilos de script.js
+    const toastType = type === 'error' ? 'danger' : type;
+    
     // Integración con sistema de notificaciones existente
     if (typeof window.showToast === 'function') {
-        window.showToast(message, type);
+        // Adaptar a la firma de script.js: showToast(type, title, message)
+        window.showToast(toastType, 'Gestión de Datos', message);
     } else {
         console.log(`[${type.toUpperCase()}] ${message}`);
         alert(message);
