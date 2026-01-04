@@ -1430,9 +1430,12 @@ async function loadTasks() {
         }
     } catch (error) {
         console.error('Error loading tasks:', error);
-        const errorMsg = error.code === 'PGRST200' 
-            ? 'Error de Base de Datos: Falta relación (Foreign Key) entre Tareas y Expedientes.' 
-            : 'No se pudieron cargar las tareas. Revisa la consola.';
+        let errorMsg = 'No se pudieron cargar las tareas.';
+        
+        if (error.code === 'PGRST205') errorMsg = 'La tabla "tareas" no existe en Supabase. Ejecuta el script SQL.';
+        else if (error.code === 'PGRST200') errorMsg = 'Error de relación (FK) entre tablas.';
+        else errorMsg += ` (${error.message})`;
+
         tableBody.innerHTML = `<tr><td colspan="11" class="text-center text-danger"><i class="bi bi-exclamation-triangle"></i> ${errorMsg}</td></tr>`;
     } finally {
         hideLoading();
@@ -1614,8 +1617,12 @@ async function loadDuplicates() {
         duplicatesData = duplicates || [];
         renderDuplicatesTable();
     } catch (error) {
-        console.error('Error loading duplicates:', error);
-        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No se pudieron cargar los duplicados (¿Tabla "duplicados" existe?)</td></tr>';
+        if (error.code === 'PGRST205') {
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">La tabla "duplicados" no existe. Ejecuta el script SQL de configuración.</td></tr>';
+        } else {
+            console.error('Error loading duplicates:', error);
+            tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error al cargar duplicados: ${error.message}</td></tr>`;
+        }
     } finally {
         hideLoading();
     }
