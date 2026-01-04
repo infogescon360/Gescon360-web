@@ -3227,8 +3227,12 @@ async function loadImportLogs() {
             tableBody.appendChild(row);
         });
     } catch (error) {
-        console.warn('Error loading import logs (Tabla import_logs podría no existir):', error);
-        // No mostramos error al usuario para no ensuciar la UI si la tabla no existe aún
+        if (error.code === 'PGRST205') {
+            // Tabla no existe: Mostrar mensaje informativo en lugar de error
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Historial no disponible (Tabla import_logs no configurada).</td></tr>';
+        } else {
+            console.warn('Error loading import logs:', error);
+        }
     }
 }
 
