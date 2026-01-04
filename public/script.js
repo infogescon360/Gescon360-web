@@ -325,19 +325,19 @@ async function checkAuthStatus() {
             let isAdmin = false;
 
             try {
-                const { data: profile, error: profileError } = await supabaseClient
-                    .from('profiles')
-                    .select('full_name, role')
-                    .eq('id', session.user.id)
-                    .maybeSingle();
+                // Usar endpoint del backend para evitar error de recursión RLS
+                const response = await fetch('/api/profile/me', {
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`
+                    }
+                });
 
-                if (profileError) {
-                    console.error('Error al obtener perfil:', profileError);
-                }
-
-                if (profile) {
-                    if (profile.full_name) fullName = profile.full_name;
-                    if (profile.role === 'admin') isAdmin = true;
+                if (response.ok) {
+                    const profile = await response.json();
+                    if (profile) {
+                        if (profile.full_name) fullName = profile.full_name;
+                        if (profile.role === 'admin') isAdmin = true;
+                    }
                 }
             } catch (e) {
                 console.warn('Error obteniendo perfil:', e);
@@ -355,6 +355,9 @@ async function checkAuthStatus() {
 
             // Ejecutar automatizaciones diarias (Emails, Archivado)
             runDailyAutomations();
+            
+            // Aplicar control de acceso al menú lateral
+            applyMenuAccessControl();
             
             // Mostrar elementos del dashboard explícitamente
             const sidebar = document.querySelector('.sidebar');
@@ -591,15 +594,19 @@ async function login() {
             let isAdmin = false;
 
             try {
-                const { data: profile } = await supabaseClient
-                    .from('profiles')
-                    .select('full_name, role')
-                    .eq('id', data.user.id)
-                    .single();
+                // Usar endpoint del backend para evitar error de recursión RLS
+                const response = await fetch('/api/profile/me', {
+                    headers: {
+                        'Authorization': `Bearer ${data.session.access_token}`
+                    }
+                });
 
-                if (profile) {
-                    if (profile.full_name) fullName = profile.full_name;
-                    if (profile.role === 'admin') isAdmin = true;
+                if (response.ok) {
+                    const profile = await response.json();
+                    if (profile) {
+                        if (profile.full_name) fullName = profile.full_name;
+                        if (profile.role === 'admin') isAdmin = true;
+                    }
                 }
             } catch (e) {
                 console.warn('Error obteniendo perfil:', e);
@@ -942,6 +949,12 @@ async function viewExpedient(id) {
 
 async function editExpedient(id) {
     console.log('Editar expediente:', id);
+    
+    if (!checkPermission('canEditExpediente')) {
+        showToast('danger', 'Acceso Denegado', 'No tienes permisos para editar expedientes.');
+        return;
+    }
+
     showLoading();
 
     try {

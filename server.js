@@ -250,6 +250,22 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Endpoint para obtener el perfil del usuario actual (Bypassing RLS para evitar recursión)
+app.get('/api/profile/me', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('full_name, role')
+      .eq('id', req.user.id)
+      .maybeSingle();
+    
+    if (error) throw error;
+    res.json(data || {});
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint para cambiar contraseña (Usuario autenticado)
 app.post('/api/change-password', requireAuth, async (req, res) => {
   try {
