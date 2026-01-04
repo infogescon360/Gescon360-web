@@ -1257,6 +1257,47 @@ app.delete('/api/expedientes/:id', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/expedientes/:id/archive', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { motivo } = req.body;
+
+    if (!motivo) {
+      return res.status(400).json({ error: 'Se requiere un motivo de archivo.' });
+    }
+
+    // 1. Obtener los datos del expediente que se va a archivar
+    const { data: expediente, error: getError } = await supabaseAdmin
+      .from('expedientes')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (getError) return res.status(404).json({ error: 'Expediente no encontrado para archivar.' });
+
+    // 2. Insertar el registro en la tabla de archivados
+    const { error: archiveError } = await supabaseAdmin
+      .from('expedientes_archivados')
+      .insert({
+        ...expediente,
+        estado: 'Archivado', // Estandarizar el estado en la tabla de archivo
+        motivo_archivo: motivo,
+        fecha_archivo: new Date().toISOString()
+      });
+
+    if (archiveError) throw new Error(`Error al mover a archivados: ${archiveError.message}`);
+
+    // 3. Eliminar el registro de la tabla de expedientes activos
+    const { error: deleteError } = await supabaseAdmin.from('expedientes').delete().eq('id', id);
+    if (deleteError) throw new Error(`Error al eliminar de expedientes activos: ${deleteError.message}`);
+
+    res.json({ success: true, message: `Expediente archivado con motivo: ${motivo}` });
+  } catch (e) {
+    console.error('Error en /api/expedientes/:id/archive:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/expedientes/:id/seguimientos', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;

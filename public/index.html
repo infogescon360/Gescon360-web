@@ -393,6 +393,12 @@
                 <div class="custom-table mt-4">
                     <div class="table-header">
                         <h5 class="table-title">Registro de Importaciones</h5>
+                        <div class="table-actions">
+                            <input type="date" id="importLogDateFilter" class="form-control form-control-sm d-inline-block w-auto me-2" onchange="loadImportLogs()" title="Filtrar por fecha">
+                            <button class="btn-custom btn-outline-custom" onclick="exportImportLogsToExcel()">
+                                <i class="bi bi-file-earmark-excel"></i> Exportar Historial
+                            </button>
+                        </div>
                     </div>
                     <div class="table-container">
                         <table>

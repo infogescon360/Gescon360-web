@@ -351,6 +351,154 @@ function showToast(type, title, message) {
     });
 }
 
+// --- MODAL DE SEGURIDAD REUTILIZABLE ---
+function getOrCreateSecurityModal() {
+    let modalEl = document.getElementById('securityModal');
+    if (!modalEl) {
+        const modalHtml = `
+        <div class="modal fade" id="securityModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-danger">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title" id="securityModalTitle"><i class="bi bi-exclamation-triangle-fill"></i> Confirmación de Seguridad</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="securityModalMessage" class="mb-3"></p>
+                        <div class="mb-3">
+                            <label class="form-label">Para confirmar, escribe "<strong id="securityExpectedText"></strong>" abajo:</label>
+                            <input type="text" class="form-control" id="securityInput" autocomplete="off">
+                            <div class="invalid-feedback">El texto no coincide.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-danger" id="securityConfirmBtn">Confirmar Acción</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('securityModal');
+    }
+    return modalEl;
+}
+
+function requestSecurityConfirmation(title, message, expectedText) {
+    return new Promise((resolve) => {
+        const modalEl = getOrCreateSecurityModal();
+        let modal = bootstrap.Modal.getInstance(modalEl);
+        if (!modal) modal = new bootstrap.Modal(modalEl);
+        
+        document.getElementById('securityModalTitle').innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> ${title}`;
+        document.getElementById('securityModalMessage').innerHTML = message.replace(/\n/g, '<br>');
+        document.getElementById('securityExpectedText').textContent = expectedText;
+        
+        const input = document.getElementById('securityInput');
+        input.value = '';
+        input.classList.remove('is-invalid');
+        
+        const confirmBtn = document.getElementById('securityConfirmBtn');
+        const newConfirmBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+        
+        let resolved = false;
+
+        const handleConfirm = () => {
+            if (input.value === expectedText) {
+                resolved = true;
+                modal.hide();
+                resolve(true);
+            } else {
+                input.classList.add('is-invalid');
+            }
+        };
+
+        newConfirmBtn.addEventListener('click', handleConfirm);
+        input.onkeydown = (e) => {
+            input.classList.remove('is-invalid');
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleConfirm();
+            }
+        };
+
+        const handleHidden = () => {
+            modalEl.removeEventListener('hidden.bs.modal', handleHidden);
+            if (!resolved) resolve(false);
+        };
+        
+        modalEl.addEventListener('hidden.bs.modal', handleHidden);
+        modal.show();
+        setTimeout(() => input.focus(), 500);
+    });
+}
+
+// --- MODAL DE CONFIRMACIÓN SIMPLE (SÍ/NO) ---
+function getOrCreateConfirmModal() {
+    let modalEl = document.getElementById('confirmModal');
+    if (!modalEl) {
+        const modalHtml = `
+        <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="confirmModalTitle">Confirmación</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="confirmModalMessage"></p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="confirmModalBtn">Confirmar</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('confirmModal');
+    }
+    return modalEl;
+}
+
+function showConfirmModal(title, message, confirmText = 'Confirmar', confirmClass = 'btn-primary') {
+    return new Promise((resolve) => {
+        const modalEl = getOrCreateConfirmModal();
+        let modal = bootstrap.Modal.getInstance(modalEl);
+        if (!modal) modal = new bootstrap.Modal(modalEl);
+
+        document.getElementById('confirmModalTitle').textContent = title;
+        document.getElementById('confirmModalMessage').innerHTML = message.replace(/\n/g, '<br>');
+        
+        const confirmBtn = document.getElementById('confirmModalBtn');
+        confirmBtn.textContent = confirmText;
+        confirmBtn.className = `btn ${confirmClass}`;
+        
+        // Clonar botón para eliminar listeners anteriores
+        const newConfirmBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+        
+        let resolved = false;
+
+        const handleConfirm = () => {
+            resolved = true;
+            modal.hide();
+            resolve(true);
+        };
+
+        newConfirmBtn.addEventListener('click', handleConfirm);
+
+        const handleHidden = () => {
+            modalEl.removeEventListener('hidden.bs.modal', handleHidden);
+            if (!resolved) resolve(false);
+        };
+
+        modalEl.addEventListener('hidden.bs.modal', handleHidden);
+        modal.show();
+    });
+}
+
 // Initialize Application
 document.addEventListener('DOMContentLoaded', function () {
     // Visual debugger desactivado
@@ -1322,22 +1470,35 @@ async function saveTask() {
 
         if (error) throw error;
 
-        // LÓGICA DE ARCHIVADO AUTOMÁTICO (REQ: Finalizados van a Archivados)
+        // LÓGICA DE ARCHIVADO AUTOMÁTICO: Si la tarea se marca con un estado final,
+        // el expediente asociado debe ser archivado usando el endpoint del servidor.
         const finalStates = ['Completada', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos', 'Recobrado'];
         if (finalStates.includes(taskData.estado)) {
-            // Actualizar expediente a Archivado
-            if (taskData.num_siniestro) {
-                await supabaseClient
+            if (numSiniestroFinal) {
+                // 1. Encontrar el ID del expediente a partir del número de siniestro
+                const { data: exp, error: findError } = await supabaseClient
                     .from('expedientes')
-                    .update({ estado: 'Archivado' })
-                    .eq('num_siniestro', taskData.num_siniestro);
-            }
-            // Actualizar tarea a Archivado (para que desaparezca de la lista activa)
-            if (id) {
-                await supabaseClient
-                    .from('tareas')
-                    .update({ estado: 'Archivado' })
-                    .eq('id', id);
+                    .select('id')
+                    .eq('num_siniestro', numSiniestroFinal)
+                    .maybeSingle();
+
+                if (findError) {
+                    console.warn('No se pudo encontrar el expediente para archivar:', findError.message);
+                } else if (exp) {
+                    // 2. Llamar al endpoint de archivado del servidor
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    if (session) {
+                        const response = await fetch(`/api/expedientes/${exp.id}/archive`, {
+                            method: 'POST',
+                            headers: { 
+                                'Authorization': `Bearer ${session.access_token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ motivo: taskData.estado }) // Pasar el estado de la tarea como motivo
+                        });
+                        if (!response.ok) console.error('Error archivando expediente desde el servidor:', await response.text());
+                    }
+                }
             }
         }
 
@@ -1749,7 +1910,13 @@ function renderDuplicatesTable() {
 }
 
 async function processAllDuplicates() {
-    if (!confirm('¿Procesar y fusionar todos los duplicados detectados?\n\nSe actualizarán los expedientes originales con la información más reciente y se eliminarán los registros de la bandeja de duplicados.')) return;
+    const confirmed = await showConfirmModal(
+        'Procesar Todos los Duplicados',
+        '¿Procesar y fusionar todos los duplicados detectados?\n\nSe actualizarán los expedientes originales con la información más reciente y se eliminarán los registros de la bandeja de duplicados.',
+        'Procesar Todo',
+        'btn-primary'
+    );
+    if (!confirmed) return;
     
     showLoading();
     try {
@@ -1790,7 +1957,7 @@ async function processAllDuplicates() {
                 processedExpedients.push(expedientData);
             }
         }
-
+        
         // Eliminar todos de la tabla duplicados
         await supabaseClient.from('duplicados').delete().not('id', 'is', null);
 
@@ -1799,6 +1966,113 @@ async function processAllDuplicates() {
         loadDashboardStats();
     } catch (error) {
         console.error('Error procesando duplicados:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteAllDuplicates() {
+    const confirmed = await requestSecurityConfirmation(
+        'Eliminar TODOS los Duplicados',
+        'PELIGRO: ¿Estás seguro de que deseas eliminar TODOS los duplicados pendientes?\n\nEsta acción no se puede deshacer.',
+        'ELIMINAR'
+    );
+
+    if (!confirmed) {
+        showToast('info', 'Cancelado', 'Operación cancelada.');
+        return;
+    }
+
+    showLoading();
+    try {
+        const { error } = await supabaseClient
+            .from('duplicados')
+            .delete()
+            .not('id', 'is', null);
+
+        if (error) throw error;
+
+        showToast('success', 'Eliminados', 'Se han eliminado todos los duplicados pendientes.');
+        loadDuplicates();
+        loadDashboardStats();
+    } catch (error) {
+        console.error('Error deleting all duplicates:', error);
+        showToast('danger', 'Error', 'Error al eliminar duplicados: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteDuplicate(id) {
+    const confirmed = await showConfirmModal(
+        'Eliminar Duplicado',
+        '¿Eliminar este registro de duplicados?',
+        'Eliminar',
+        'btn-danger'
+    );
+    if (!confirmed) return;
+    
+    showLoading();
+    try {
+        const { error } = await supabaseClient
+            .from('duplicados')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast('success', 'Eliminado', 'Registro eliminado.');
+        loadDuplicates();
+        loadDashboardStats();
+    } catch (error) {
+        console.error('Error deleting duplicate:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+async function processDuplicate(id) {
+    const confirmed = await showConfirmModal(
+        'Procesar Duplicado',
+        '¿Procesar este duplicado? Se actualizará el expediente original.',
+        'Procesar',
+        'btn-success'
+    );
+    if (!confirmed) return;
+    
+    showLoading();
+    try {
+        const { data: dup, error: getError } = await supabaseClient
+            .from('duplicados')
+            .select('*')
+            .eq('id', id)
+            .single();
+            
+        if (getError) throw getError;
+        
+        const { id: dupId, fecha_deteccion, veces_repetido, created_at, ...expedientData } = dup;
+        
+        const { data: existing } = await supabaseClient
+            .from('expedientes')
+            .select('id')
+            .eq('num_siniestro', expedientData.num_siniestro)
+            .maybeSingle();
+
+        if (existing) {
+            await supabaseClient.from('expedientes').update(expedientData).eq('id', existing.id);
+        } else {
+            await supabaseClient.from('expedientes').insert([expedientData]);
+        }
+        
+        await supabaseClient.from('duplicados').delete().eq('id', id);
+        
+        showToast('success', 'Procesado', 'Duplicado procesado correctamente.');
+        loadDuplicates();
+        loadDashboardStats();
+    } catch (error) {
+        console.error('Error processing duplicate:', error);
         showToast('danger', 'Error', error.message);
     } finally {
         hideLoading();
@@ -1888,8 +2162,6 @@ function normalizarExpediente(row, fileName, index) {
         tipo_dano: cleanString(row['Tipo Daño'] || row['tipo_dano'] || row['TIPO_DAÑO']),
         nombre_causante: cleanString(row['Causante'] || row['nombre_causante']),
         direccion_causante: cleanString(row['Dirección Causante'] || row['direccion_causante']),
-        cia_causante
-
         cia_causante: cleanString(row['Cía Causante'] || row['cia_causante']),
         estado: 'Pdte. revisión',
         fecha_inicio: new Date().toISOString().split('T')[0]
@@ -2184,8 +2456,14 @@ async function updateSystemStatusTable() {
     }).join('');
 }
 
-function resetLimits() {
-    if (!confirm('¿Restablecer los límites a los valores predeterminados?')) return;
+async function resetLimits() {
+    const confirmed = await showConfirmModal(
+        'Restablecer Límites',
+        '¿Restablecer los límites a los valores predeterminados?',
+        'Restablecer',
+        'btn-warning'
+    );
+    if (!confirmed) return;
 
     const defaults = {
         maxFileSize: 10,
@@ -2461,16 +2739,28 @@ function viewArchived(id) {
 }
 
 async function restoreExpedient(id) {
-    if (!confirm(`¿Está seguro de que desea restaurar este expediente? Pasará a estado "Pendiente".`)) return;
+    const confirmed = await showConfirmModal(
+        'Restaurar Expediente',
+        '¿Está seguro de que desea restaurar este expediente? Pasará a estado "Pendiente".',
+        'Restaurar',
+        'btn-warning'
+    );
+    if (!confirmed) return;
     
     showLoading();
     try {
-        const { error } = await supabaseClient
-            .from('expedientes')
-            .update({ estado: 'Pendiente' })
-            .eq('id', id);
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
 
-        if (error) throw error;
+        const response = await fetch(`/api/archivados/${id}/restaurar`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Error al restaurar expediente');
+        }
 
         showToast('success', 'Restaurado', 'Expediente restaurado correctamente.');
         
@@ -2531,8 +2821,14 @@ function loadGeneralConfig() {
     setCheck('emailNotifications', config.emailNotifications);
 }
 
-function resetConfig() {
-    if (!confirm('¿Restablecer la configuración general a los valores predeterminados?')) return;
+async function resetConfig() {
+    const confirmed = await showConfirmModal(
+        'Restablecer Configuración',
+        '¿Restablecer la configuración general a los valores predeterminados?',
+        'Restablecer',
+        'btn-warning'
+    );
+    if (!confirmed) return;
 
     localStorage.removeItem('gescon360_generalConfig');
     loadGeneralConfig();
@@ -2651,12 +2947,6 @@ async function importarExpedientes() {
         // podrías hacer una llamada extra o incluirlos en la llamada al backend.
         // Por ahora, confiamos en el log del backend para los insertados.
 
-        // PASO 4: Distribuir Tareas si está activado
-        // REACTIVADO para cumplir con la lógica de "Pdte. revisión" y asignación equitativa específica
-        if (distribuirTareas && resultado.expedientes && resultado.expedientes.length > 0) {
-           await distribuirTareasImportadas(resultado.expedientes, distribuirEquitativamente);
-        }
-
         hideLoading();
         showToast('success', 'Importación Completada', 
             `Se importaron ${resultado.insertados} expedientes correctamente.`);
@@ -2669,78 +2959,6 @@ async function importarExpedientes() {
         console.error('Error importando expedientes:', error);
         hideLoading();
         showToast('danger', 'Error', 'Error al importar expedientes: ' + error.message);
-    }
-}
-
-// Función auxiliar para distribuir tareas tras importación
-async function distribuirTareasImportadas(expedientes, distribuirEquitativamente) {
-    try {
-        showToast('info', 'Generando Tareas', 'Verificando y creando tareas para los expedientes importados...');
-        
-        // 1. Verificar tareas existentes para evitar duplicados
-        const siniestros = expedientes.map(e => e.num_siniestro).filter(n => n);
-        
-        if (siniestros.length > 0) {
-            const { data: tareasExistentes, error: checkError } = await supabaseClient
-                .from('tareas')
-                .select('num_siniestro') // FIX: Verificar por num_siniestro para evitar duplicados fantasma
-                .in('num_siniestro', siniestros);
-
-            if (checkError) throw checkError;
-
-            const siniestrosConTarea = new Set(tareasExistentes.map(t => t.num_siniestro));
-            // Filtrar expedientes que ya tienen tarea
-            expedientes = expedientes.filter(exp => !siniestrosConTarea.has(exp.num_siniestro));
-        }
-
-        if (expedientes.length === 0) {
-            showToast('info', 'Tareas Actualizadas', 'Todos los expedientes importados ya tienen tareas asignadas.');
-            return;
-        }
-
-        let responsables = [];
-        if (distribuirEquitativamente) {
-            // Intentar obtener usuarios activos
-            const { data: users } = await supabaseClient
-                .from('profiles')
-                .select('*')
-                .eq('status', 'active');
-            responsables = users || [];
-        }
-
-        // Fallback a datos locales si no hay usuarios en DB o error
-        if (responsables.length === 0 && typeof responsiblesData !== 'undefined') {
-            responsables = responsiblesData.filter(r => r.status === 'available' || r.status === 'active');
-        }
-
-        const tareas = expedientes.map((exp, index) => {
-            let responsable = '';
-            if (responsables.length > 0) {
-                const user = responsables[index % responsables.length];
-                responsable = user.full_name || user.name || user.email;
-            }
-
-            return {
-                num_siniestro: exp.num_siniestro,
-                // referencia_gescon: exp.referencia_gescon, // Pasar referencia (Desactivado por error de esquema)
-                responsable: responsable,
-                descripcion: `Gestión inicial del expediente ${exp.num_siniestro} (Importado)`,
-                // REQ: Prioridad Alta si importe > 1500 o fecha limite es hoy.
-                // REQ: Fecha límite inicial es HOY (día de carga).
-                prioridad: (exp.importe > 1500) ? 'Alta' : 'Media', 
-                fecha_limite: new Date().toISOString().split('T')[0], // REQ: Mismo día de carga
-                estado: 'Pdte. revisión' // Estado inicial requerido
-            };
-        });
-
-        const { error } = await supabaseClient.from('tareas').insert(tareas);
-        if (error) throw error;
-        
-        showToast('success', 'Tareas Generadas', `Se han creado ${tareas.length} tareas automáticamente.`);
-    } catch (error) {
-        console.error('Error distribuyendo tareas:', error);
-        // No bloqueamos el flujo principal, solo avisamos
-        showToast('warning', 'Aviso Tareas', 'Expedientes importados, pero error al crear tareas: ' + (error.message || 'Tabla tareas no existe'));
     }
 }
 
@@ -2772,18 +2990,33 @@ async function loadImportLogs() {
     const tableBody = document.getElementById('importLogTable');
     if (!tableBody) return;
 
+    const dateInput = document.getElementById('importLogDateFilter');
+    const dateValue = dateInput ? dateInput.value : null;
+
     try {
-        const { data: logs, error } = await supabaseClient
+        let query = supabaseClient
             .from('import_logs')
             .select('*')
-            .order('created_at', { ascending: false })
-            .limit(20);
+            .order('created_at', { ascending: false });
+
+        if (dateValue) {
+            const start = new Date(dateValue + 'T00:00:00');
+            const end = new Date(dateValue + 'T23:59:59.999');
+            query = query
+                .gte('created_at', start.toISOString())
+                .lte('created_at', end.toISOString());
+        } else {
+            query = query.limit(20);
+        }
+
+        const { data: logs, error } = await query;
 
         if (error) throw error;
 
         tableBody.innerHTML = '';
         if (!logs || logs.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay registros de importación recientes.</td></tr>';
+            const msg = dateValue ? 'No hay registros para la fecha seleccionada.' : 'No hay registros de importación recientes.';
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">${msg}</td></tr>`;
             return;
         }
 
@@ -2820,6 +3053,57 @@ async function loadImportLogs() {
         } else {
             console.warn('Error loading import logs:', error);
         }
+    }
+}
+
+async function exportImportLogsToExcel() {
+    console.log('Exporting import logs...');
+    showLoading();
+
+    try {
+        const { data: logs, error } = await supabaseClient
+            .from('import_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(1000);
+
+        if (error) throw error;
+
+        if (!logs || logs.length === 0) {
+            showToast('warning', 'Sin datos', 'No hay registros de importación para exportar.');
+            return;
+        }
+
+        const exportData = logs.map(log => ({
+            'Fecha': new Date(log.created_at).toLocaleString(),
+            'Archivo': log.file_name || '-',
+            'Total Registros': log.total_records || 0,
+            'Estado': log.status || '-',
+            'Duplicados': log.duplicates_count || 0
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Historial Importaciones");
+
+        const wscols = [
+            {wch: 22},
+            {wch: 30},
+            {wch: 15},
+            {wch: 15},
+            {wch: 12}
+        ];
+        worksheet['!cols'] = wscols;
+
+        const fileName = `Historial_Importaciones_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+
+        showToast('success', 'Exportado', 'Historial exportado correctamente.');
+    } catch (error) {
+        console.error('Error exporting logs:', error);
+        showToast('danger', 'Error', 'Error al exportar: ' + error.message);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -3555,7 +3839,13 @@ async function limpiarExpedientesHuerfanos() {
                            `Esto suele ocurrir por importaciones fallidas.\n` +
                            `¿Deseas eliminarlos para limpiar la base de datos?`;
                            
-        if (!confirm(confirmMsg)) return;
+        const confirmed = await showConfirmModal(
+            'Limpiar Huérfanos',
+            confirmMsg,
+            'Limpiar',
+            'btn-danger'
+        );
+        if (!confirmed) return;
         
         // 4. Eliminar
         const ids = huerfanos.map(e => e.id);
@@ -3581,8 +3871,16 @@ async function limpiarExpedientesHuerfanos() {
  * BORRADO TOTAL: Elimina todos los datos para empezar de cero.
  */
 async function resetBaseDeDatos() {
-    if (!confirm('PELIGRO: ¿Estás seguro de que quieres BORRAR TODOS los expedientes, tareas y duplicados?\n\nEsta acción no se puede deshacer.')) return;
-    if (!confirm('Confirmación final: Se borrarán TODOS los datos para empezar de cero.')) return;
+    const confirmed = await requestSecurityConfirmation(
+        'BORRADO TOTAL DE BASE DE DATOS',
+        'PELIGRO EXTREMO: Estás a punto de BORRAR TODA LA BASE DE DATOS (Expedientes, Tareas, Duplicados).\n\nEsta acción es IRREVERSIBLE y eliminará todo el trabajo realizado.',
+        'BORRAR TODO'
+    );
+
+    if (!confirmed) {
+        showToast('info', 'Cancelado', 'Operación cancelada.');
+        return;
+    }
     
     showLoading();
     try {
@@ -3652,51 +3950,58 @@ function loadTasksPage(page) {
     loadTasks();
 }
 
+// Helper para construir la query de tareas (DRY)
+async function buildTasksQuery() {
+    let query = supabaseClient.from('tareas').select('*', { count: 'exact' });
+    
+    // FILTRO POR ROL
+    if (currentUser && !currentUser.isAdmin) {
+        query = query.or(`responsable.eq.${currentUser.name},responsable.eq.${currentUser.email}`);
+    }
+    
+    // Aplicar filtros activos
+    if (activeTaskFilters.responsable) query = query.eq('responsable', activeTaskFilters.responsable);
+    if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
+    if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
+    
+    // Filtro de búsqueda
+    const searchInput = document.getElementById('taskSearchInput');
+    const searchTerm = searchInput ? searchInput.value.trim() : '';
+    
+    if (searchTerm) {
+         let sgrSiniestros = [];
+        const { data: sgrMatches } = await supabaseClient
+            .from('expedientes')
+            .select('num_siniestro')
+            .ilike('num_sgr', `%${searchTerm}%`)
+            .limit(20);
+            
+        if (sgrMatches && sgrMatches.length > 0) {
+            sgrSiniestros = sgrMatches.map(e => e.num_siniestro);
+        }
+
+        let orConditions = [`num_siniestro.ilike.%${searchTerm}%`, `descripcion.ilike.%${searchTerm}%`];
+        if (sgrSiniestros.length > 0) {
+            sgrSiniestros.forEach(sin => orConditions.push(`num_siniestro.eq.${sin}`));
+        }
+        
+        query = query.or(orConditions.join(','));
+    }
+    return query;
+}
+
 async function exportTasksToExcel() {
     console.log('Exporting tasks...');
     showLoading();
 
     try {
-        // 1. Replicar la query de loadTasks (sin paginación)
-        let query = supabaseClient
-            .from('tareas')
-            .select('*');
+        // Usar el constructor de query centralizado
+        const query = await buildTasksQuery();
         
-        // FILTRO POR ROL
-        if (currentUser && !currentUser.isAdmin) {
-            query = query.or(`responsable.eq.${currentUser.name},responsable.eq.${currentUser.email}`);
-        }
-        
-        // Aplicar filtros activos
-        if (activeTaskFilters.responsable) query = query.eq('responsable', activeTaskFilters.responsable);
-        if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
-        if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
-        
-        // Filtro de búsqueda
-        const searchInput = document.getElementById('taskSearchInput');
-        const searchTerm = searchInput ? searchInput.value.trim() : '';
-        
-        if (searchTerm) {
-             let sgrSiniestros = [];
-            const { data: sgrMatches } = await supabaseClient
-                .from('expedientes')
-                .select('num_siniestro')
-                .ilike('num_sgr', `%${searchTerm}%`)
-                .limit(20);
-                
-            if (sgrMatches && sgrMatches.length > 0) {
-                sgrSiniestros = sgrMatches.map(e => e.num_siniestro);
-            }
-
-            let orConditions = [`num_siniestro.ilike.%${searchTerm}%`, `descripcion.ilike.%${searchTerm}%`];
-            if (sgrSiniestros.length > 0) {
-                sgrSiniestros.forEach(sin => orConditions.push(`num_siniestro.eq.${sin}`));
-            }
-            
-            query = query.or(orConditions.join(','));
-        }
-
-        const { data: tasks, error } = await query.order('fecha_limite', { ascending: true });
+        // Añadir límite de seguridad para evitar crashes en navegador
+        const { data: tasks, error } = await query
+            .order('fecha_limite', { ascending: true })
+            .limit(2000);
 
         if (error) throw error;
 
