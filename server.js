@@ -723,36 +723,43 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
       return res.json(apiCache.charts.data);
     }
 
-    // Optimización: Seleccionar solo columnas necesarias para agrupar
-    const { data: expedientes, error } = await supabaseAdmin
-      .from('expedientes')
-      .select('estado, fecha_ocurrencia, created_at');
+    // 1. Intentar usar RPC (Cálculo en Base de Datos - Muy Rápido)
+    // Requiere crear la función 'get_charts_stats' en Supabase
+    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_charts_stats');
 
-    if (error) throw error;
+    let result;
 
-    const statusStats = {};
-    const monthlyStats = {};
+    if (!rpcError && rpcData) {
+        result = rpcData;
+    } else {
+        // 2. Fallback: Cálculo en memoria (si no existe la función RPC)
+        // console.warn('RPC get_charts_stats no disponible, usando fallback:', rpcError?.message);
 
-    (expedientes || []).forEach(exp => {
-      // Status
-      const status = exp.estado || 'Sin estado';
-      statusStats[status] = (statusStats[status] || 0) + 1;
+        const { data: expedientes, error } = await supabaseAdmin
+          .from('expedientes')
+          .select('estado, fecha_ocurrencia, created_at');
 
-      // Monthly
-      const dateStr = exp.fecha_ocurrencia || exp.created_at;
-      if (dateStr) {
-        const date = new Date(dateStr);
-        if (!isNaN(date.getTime())) {
-          const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          monthlyStats[key] = (monthlyStats[key] || 0) + 1;
-        }
-      }
-    });
+        if (error) throw error;
 
-    const result = {
-      status: statusStats,
-      monthly: monthlyStats
-    };
+        const statusStats = {};
+        const monthlyStats = {};
+
+        (expedientes || []).forEach(exp => {
+          const status = exp.estado || 'Sin estado';
+          statusStats[status] = (statusStats[status] || 0) + 1;
+
+          const dateStr = exp.fecha_ocurrencia || exp.created_at;
+          if (dateStr) {
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+              const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+              monthlyStats[key] = (monthlyStats[key] || 0) + 1;
+            }
+          }
+        });
+
+        result = { status: statusStats, monthly: monthlyStats };
+    }
 
     // Actualizar caché
     apiCache.charts.data = result;
