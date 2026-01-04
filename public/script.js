@@ -2738,11 +2738,12 @@ async function loadArchivedExpedients(page = 1) {
         const to = from + ITEMS_PER_ARCHIVE_PAGE - 1;
 
         // Cargar archivados con paginación
+        // CORRECCIÓN: Usar tabla 'expedientes_archivados' en lugar de 'expedientes'
+        // ya que server.js mueve los registros ahí.
         const { data: archives, count, error } = await supabaseClient
-            .from('expedientes')
+            .from('expedientes_archivados')
             .select('*', { count: 'exact' })
-            .eq('estado', 'Archivado')
-            .order('fecha_ocurrencia', { ascending: false })
+            .order('fecha_archivo', { ascending: false })
             .range(from, to);
 
         if (error) throw error;
