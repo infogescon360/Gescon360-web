@@ -377,10 +377,10 @@ app.get('/admin/check', async (req, res) => {
 // ---------------------------------------------------------------------
 // Endpoints de configuración y health
 // ---------------------------------------------------------------------
-app.get('/config', (req, res) => {
+app.get('/api/config', (req, res) => {
   res.json({
-    supabaseUrl: SUPABASE_URL,
-    supabaseAnonKey: SUPABASE_ANON_KEY,
+    SUPABASE_URL: SUPABASE_URL,
+    SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
   });
 });
 
