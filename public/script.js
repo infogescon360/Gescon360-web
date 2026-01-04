@@ -325,11 +325,15 @@ async function checkAuthStatus() {
             let isAdmin = false;
 
             try {
-                const { data: profile } = await supabaseClient
+                const { data: profile, error: profileError } = await supabaseClient
                     .from('profiles')
                     .select('full_name, role')
                     .eq('id', session.user.id)
-                    .single();
+                    .maybeSingle();
+
+                if (profileError) {
+                    console.error('Error al obtener perfil:', profileError);
+                }
 
                 if (profile) {
                     if (profile.full_name) fullName = profile.full_name;
