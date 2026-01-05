@@ -2253,62 +2253,125 @@ function renderResponsiblesTable(users, stats = {}) {
         return;
     }
 
+    const table = document.createElement('table');
+    table.className = 'table table-hover';
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Estado</th>
+                <th>Tareas Activas</th>
+                <th>Completadas</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+    const tbody = table.querySelector('tbody');
+
     users.forEach(user => {
         const name = user.full_name || user.email;
         // Buscar estadísticas por nombre o email
-        const userStats = stats[name] || { active: 0, completed: 0 };
-        if (!stats[name] && stats[user.email]) {
-             Object.assign(userStats, stats[user.email]);
-        }
+        const userStats = stats[name] || stats[user.email] || { active: 0, completed: 0 };
         
         const statusLabel = statusMap[user.status] || user.status;
         const statusClass = classMap[user.status] || 'bg-secondary';
         
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${name}</td>
+            <td>${user.email}</td>
+            <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+            <td>${userStats.active}</td>
+            <td>${userStats.completed}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    container.appendChild(table);
+}
+
+async function loadUsers() {
+    console.log('Cargando usuarios...');
+    showLoading();
+    const container = document.getElementById('usersList');
+    if (container) container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div></div>';
+
+    try {
+        const session = await supabaseClient.auth.getSession();
+        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
+
+        const response = await fetch('/api/responsables', {
+            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        });
+
         if (!response.ok) throw new Error('Error cargando usuarios');
         const users = await response.json();
+        usersData = users;
 
-        // OPTIMIZACIÓN: Obtener estadísticas pre-calculadas del backend
-        const statsResponse = await fetch('/api/workload/stats', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        
-        let workloadStats = {};
-        if (statsResponse.ok) {
-            workloadStats = await statsResponse.json();
-        }
-
-        // Renderizar
-        tableBody.innerHTML = '';
-        users.forEach(user => {
-            const name = user.full_name || user.email;
-            const stat = workloadStats[name] || workloadStats[user.email] || { active: 0, completed: 0 };
-            
-            // Calcular porcentaje relativo a un máximo arbitrario (ej. 20 tareas) o relativo al total
-            const maxLoadReference = 20; 
-            const percent = Math.min(100, (stat.active / maxLoadReference) * 100);
-            
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${name}</td>
-                <td><span class="status-badge status-available">Activo</span></td>
-                <td>${stat.active}</td>
-                <td>${stat.completed}</td>
-                <td>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-info" role="progressbar" style="width: ${percent}%"></div>
-                    </div>
-                </td>
-                <td><span class="badge bg-success">Disponible</span></td>
-            `;
-            tableBody.appendChild(row);
-        });
-
+        renderUsersTable(users);
     } catch (error) {
-        console.error(error);
-        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error al cargar datos</td></tr>';
+        console.error('Error loading users:', error);
+        showToast('danger', 'Error', error.message);
+        if (container) container.innerHTML = '<div class="alert alert-danger">Error al cargar usuarios</div>';
     } finally {
         hideLoading();
     }
+}
+
+function renderUsersTable(users) {
+    const container = document.getElementById('usersList');
+    if (!container) return;
+
+    container.innerHTML = '';
+    if (!users || users.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">No hay usuarios registrados.</div>';
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'table table-hover';
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    `;
+    const tbody = table.querySelector('tbody');
+
+    const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
+    const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
+
+    users.forEach(user => {
+        const name = user.full_name || user.email;
+        const statusLabel = statusMap[user.status] || user.status;
+        const statusClass = classMap[user.status] || 'bg-secondary';
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${name}</td>
+            <td>${user.email}</td>
+            <td><span class="badge ${statusClass}">${statusLabel}</span></td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editUser('${user.id}')" title="Editar Usuario">
+                    <i class="bi bi-pencil"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    container.appendChild(table);
+}
+
+function editUser(id) {
+    console.log('Editar usuario:', id);
+    showToast('info', 'En desarrollo', 'Funcionalidad de edición de usuarios en desarrollo.');
 }
 
 function resetWorkloadConfig() {
