@@ -1120,6 +1120,7 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
     
     // 4. FASE DE DISTRIBUCIÓN DE TAREAS (Opcional)
     let tareasCreadas = 0;
+    const assignmentStats = {};
     if (opciones?.distribuirTareas && exitosos.length > 0) {
         // Preparar tareas
         const tareas = exitosos.map((exp) => {
@@ -1128,7 +1129,10 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
             // Recuperar nombre del responsable asignado (si existe gestor_id)
             if (exp.gestor_id && responsables.length > 0) {
                 const user = responsables.find(u => u.id === exp.gestor_id);
-                if (user) responsableNombre = user.full_name || user.email;
+                if (user) {
+                    responsableNombre = user.full_name || user.email;
+                    assignmentStats[responsableNombre] = (assignmentStats[responsableNombre] || 0) + 1;
+                }
             }
 
             return {
@@ -1182,7 +1186,8 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
         status: (erroresValidacion.length > 0 || exitosos.length === 0) ? 'Con Advertencias' : 'Completado',
         created_at: new Date().toISOString(),
         storage_path: storagePath, // Guardar referencia (requiere columna en DB)
-        error_details: erroresValidacion.length > 0 ? erroresValidacion : null // Guardar JSON de errores
+        error_details: erroresValidacion.length > 0 ? erroresValidacion : null, // Guardar JSON de errores
+        distribution_details: Object.keys(assignmentStats).length > 0 ? assignmentStats : null
       });
     }
     

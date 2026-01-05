@@ -3398,7 +3398,7 @@ async function loadImportLogs() {
             const date = new Date(log.created_at).toLocaleString();
             
             // Determinar si hay incidencias para habilitar el botón de detalles
-            const hasIssues = (log.duplicates_count > 0) || (log.status === 'Error');
+            const hasIssues = (log.duplicates_count > 0) || (log.status === 'Error') || (log.distribution_details);
             
             row.innerHTML = `
                 <td>${date}</td>
@@ -3492,14 +3492,17 @@ async function viewImportErrors(id) {
         // Obtener detalles específicos del log (incluyendo JSON de errores)
         const { data: log, error } = await supabaseClient
             .from('import_logs')
-            .select('error_details, status, file_name')
+            .select('error_details, distribution_details, status, file_name')
             .eq('id', id)
             .single();
 
         if (error) throw error;
 
-        if (!log.error_details || log.error_details.length === 0) {
-            showToast('info', 'Sin errores', 'Este registro no contiene detalles de errores.');
+        const hasErrors = log.error_details && log.error_details.length > 0;
+        const hasDistribution = log.distribution_details && Object.keys(log.distribution_details).length > 0;
+
+        if (!hasErrors && !hasDistribution) {
+            showToast('info', 'Sin detalles', 'Este registro no contiene detalles adicionales.');
             return;
         }
 
@@ -3511,8 +3514,22 @@ async function viewImportErrors(id) {
         
         let html = `<div class="alert alert-${log.status === 'Completado' ? 'success' : 'warning'} mb-3">
                         Estado: <strong>${log.status}</strong>
-                    </div>
-                    <h6 class="mb-2">Errores Detectados (${log.error_details.length}):</h6>
+                    </div>`;
+        
+        if (hasDistribution) {
+            html += `<h6 class="mb-2">Distribución de Tareas:</h6>
+                     <ul class="list-group mb-4">`;
+            for (const [user, count] of Object.entries(log.distribution_details)) {
+                html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                            ${user}
+                            <span class="badge bg-primary rounded-pill">${count}</span>
+                         </li>`;
+            }
+            html += `</ul>`;
+        }
+
+        if (hasErrors) {
+            html += `<h6 class="mb-2">Errores Detectados (${log.error_details.length}):</h6>
                     <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                         <table class="table table-sm table-bordered table-striped">
                             <thead class="table-light sticky-top">
@@ -3523,20 +3540,19 @@ async function viewImportErrors(id) {
                                 </tr>
                             </thead>
                             <tbody>`;
-        
-        log.error_details.forEach((err, index) => {
-            // Formatear datos del expediente para visualización compacta
-            const expData = err.expediente ? JSON.stringify(err.expediente) : 'N/A';
-            const shortExpData = expData.length > 120 ? expData.substring(0, 120) + '...' : expData;
             
-            html += `<tr>
-                        <td>${index + 1}</td>
-                        <td class="text-danger small">${err.error || 'Error desconocido'}</td>
-                        <td><small class="text-muted font-monospace" title="${expData.replace(/"/g, '&quot;')}">${shortExpData}</small></td>
-                     </tr>`;
-        });
-
-        html += `</tbody></table></div>`;
+            log.error_details.forEach((err, index) => {
+                const expData = err.expediente ? JSON.stringify(err.expediente) : 'N/A';
+                const shortExpData = expData.length > 120 ? expData.substring(0, 120) + '...' : expData;
+                
+                html += `<tr>
+                            <td>${index + 1}</td>
+                            <td class="text-danger small">${err.error || 'Error desconocido'}</td>
+                            <td><small class="text-muted font-monospace" title="${expData.replace(/"/g, '&quot;')}">${shortExpData}</small></td>
+                         </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        }
         
         modalBody.innerHTML = html;
         
