@@ -2324,8 +2324,17 @@ function renderUsersTable(users) {
     if (!container) return;
 
     container.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'd-flex justify-content-end mb-3';
+    header.innerHTML = `<button class="btn btn-primary" onclick="createNewUser()"><i class="bi bi-person-plus"></i> Nuevo Usuario</button>`;
+    container.appendChild(header);
+
     if (!users || users.length === 0) {
-        container.innerHTML = '<div class="alert alert-info">No hay usuarios registrados.</div>';
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-info';
+        alert.textContent = 'No hay usuarios registrados.';
+        container.appendChild(alert);
         return;
     }
 
@@ -2370,8 +2379,147 @@ function renderUsersTable(users) {
 }
 
 function editUser(id) {
-    console.log('Editar usuario:', id);
-    showToast('info', 'En desarrollo', 'Funcionalidad de edición de usuarios en desarrollo.');
+    const user = usersData.find(u => u.id === id);
+    if (!user) {
+        showToast('danger', 'Error', 'Usuario no encontrado');
+        return;
+    }
+
+    const modalEl = getOrCreateUserModal();
+    document.getElementById('userForm').reset();
+
+    document.getElementById('userId').value = user.id;
+    document.getElementById('userEmail').value = user.email;
+    document.getElementById('userFullName').value = user.full_name || '';
+    document.getElementById('userRole').value = user.role || 'user';
+    document.getElementById('userModalTitle').textContent = 'Editar Usuario';
+    document.getElementById('passwordHelp').style.display = 'block';
+    document.getElementById('userPassword').required = false;
+
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+function getOrCreateUserModal() {
+    let modalEl = document.getElementById('userModal');
+    if (!modalEl) {
+        const modalHtml = `
+        <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="userModalTitle">Nuevo Usuario</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="userForm">
+                            <input type="hidden" id="userId">
+                            <div class="mb-3">
+                                <label for="userEmail" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="userEmail" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="userPassword" class="form-label">Contraseña</label>
+                                <input type="password" class="form-control" id="userPassword">
+                                <div id="passwordHelp" class="form-text" style="display:none;">Dejar en blanco para mantener la actual.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="userFullName" class="form-label">Nombre Completo</label>
+                                <input type="text" class="form-control" id="userFullName" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="userRole" class="form-label">Rol</label>
+                                <select class="form-select" id="userRole">
+                                    <option value="user">Usuario</option>
+                                    <option value="admin">Administrador</option>
+                                </select>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="saveUser()">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('userModal');
+    }
+    return modalEl;
+}
+
+function createNewUser() {
+    const modalEl = getOrCreateUserModal();
+    const form = document.getElementById('userForm');
+    form.reset();
+    
+    document.getElementById('userId').value = '';
+    document.getElementById('userModalTitle').textContent = 'Nuevo Usuario';
+    
+    const pwdInput = document.getElementById('userPassword');
+    pwdInput.required = true;
+    document.getElementById('passwordHelp').style.display = 'none';
+
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+async function saveUser() {
+    const id = document.getElementById('userId').value;
+    const email = document.getElementById('userEmail').value;
+    const password = document.getElementById('userPassword').value;
+    const fullName = document.getElementById('userFullName').value;
+    const role = document.getElementById('userRole').value;
+
+    if (!email || !fullName) {
+        showToast('warning', 'Datos incompletos', 'Email y Nombre son obligatorios.');
+        return;
+    }
+    if (!id && !password) {
+        showToast('warning', 'Datos incompletos', 'La contraseña es obligatoria para nuevos usuarios.');
+        return;
+    }
+
+    const userData = { email, full_name: fullName, role };
+    if (password) userData.password = password;
+    
+    showLoading();
+    try {
+        const session = await supabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        if (!token) throw new Error('No hay sesión activa');
+
+        const url = id ? `/api/users/${id}` : '/api/users';
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(userData)
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Error al guardar usuario');
+        }
+
+        showToast('success', 'Éxito', id ? 'Usuario actualizado correctamente' : 'Usuario creado correctamente');
+        
+        const modalEl = document.getElementById('userModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+        
+        loadUsers();
+    } catch (error) {
+        console.error('Error saving user:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 function resetWorkloadConfig() {
