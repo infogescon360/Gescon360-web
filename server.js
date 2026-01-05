@@ -4,6 +4,8 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
+import crypto from 'crypto'; // Necesario para hash de historial
+import nodemailer from 'nodemailer';
 
 const app = express();
 
@@ -69,6 +71,17 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     console.error('❌ Error al verificar conexión Admin:', e.message);
   }
 })();
+
+// Configuración de Nodemailer para envío de correos
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
 
 // --- SISTEMA DE CACHÉ EN MEMORIA ---
 const apiCache = {
@@ -235,6 +248,22 @@ app.post('/api/login', async (req, res) => {
     // Verificar admin usando app_metadata (consistente con isUserAdmin)
     const esSuperAdmin = appMeta.role === 'admin' || appMeta.is_super_admin === true;
 
+    // --- VERIFICACIÓN DE CADUCIDAD DE CONTRASEÑA (2 MESES) ---
+    let mustChangePassword = false;
+    const lastChange = user.user_metadata?.last_password_change;
+    const TWO_MONTHS_MS = 60 * 24 * 60 * 60 * 1000;
+
+    if (lastChange) {
+        const lastDate = new Date(lastChange);
+        if (Date.now() - lastDate.getTime() > TWO_MONTHS_MS) {
+            mustChangePassword = true;
+        }
+    } else {
+        // Si nunca se ha cambiado (o no hay registro), forzamos el cambio inicial por seguridad
+        // Opcional: Podrías dar un periodo de gracia basado en created_at
+        mustChangePassword = true;
+    }
+
     return res.json({
       ok: true,
       accessToken,
@@ -244,6 +273,7 @@ app.post('/api/login', async (req, res) => {
         role,
         status,
         isSuperAdmin: esSuperAdmin,
+        mustChangePassword // Flag para el frontend
       },
     });
   } catch (e) {
@@ -268,6 +298,11 @@ app.get('/api/profile/me', requireAuth, async (req, res) => {
   }
 });
 
+// Helper para hashear contraseñas para el historial (HMAC con la clave de servicio)
+function hashPasswordForHistory(password) {
+    return crypto.createHmac('sha256', SUPABASE_SERVICE_ROLE_KEY).update(password).digest('hex');
+}
+
 // Endpoint para cambiar contraseña (Usuario autenticado)
 app.post('/api/change-password', requireAuth, async (req, res) => {
   try {
@@ -279,8 +314,12 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'La contraseña actual y la nueva son obligatorias' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+    // 1. VALIDACIÓN DE COMPLEJIDAD
+    // 12 caracteres, alfanuméricos (letras y números) y un carácter especial
+    const complexityRegex = /^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{12,}$/;
+    
+    if (!complexityRegex.test(newPassword)) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 12 caracteres, incluir letras, números y un carácter especial.' });
     }
 
     // 1. Verificar contraseña actual
@@ -293,18 +332,71 @@ app.post('/api/change-password', requireAuth, async (req, res) => {
       return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
     }
 
-    // 2. Actualizar contraseña
+    // 2. VERIFICAR HISTORIAL (Últimas 3)
+    const newHash = hashPasswordForHistory(newPassword);
+    
+    const { data: history } = await supabaseAdmin
+        .from('password_history')
+        .select('password_hash')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+    if (history && history.some(h => h.password_hash === newHash)) {
+        return res.status(400).json({ error: 'No puedes utilizar ninguna de tus últimas 3 contraseñas.' });
+    }
+
+    // 3. Actualizar contraseña en Auth
     const { error } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
-      { password: newPassword }
+      { 
+          password: newPassword,
+          user_metadata: { 
+              ...req.user.user_metadata, // Mantener otros metadatos
+              last_password_change: new Date().toISOString() 
+          }
+      }
     );
 
     if (error) throw error;
+
+    // 4. Guardar en historial y limpiar antiguos
+    await supabaseAdmin.from('password_history').insert({
+        user_id: userId,
+        password_hash: newHash
+    });
+
+    // Mantener solo los últimos 3 registros (limpieza)
+    // Subconsulta para borrar los que no estén en el top 3
+    // Nota: Supabase/Postgres no soporta limit en delete directamente fácil, lo hacemos simple:
+    // No es crítico borrar inmediatamente, pero para mantener la tabla limpia:
+    // (Omitido por complejidad SQL inline, el límite de lectura en el paso 2 es suficiente para la lógica)
 
     // 3. Invalidar todas las sesiones activas (Logout global)
     const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(userId);
     if (signOutError) {
       console.warn('Advertencia: No se pudieron cerrar las sesiones activas:', signOutError.message);
+    }
+
+    // 5. Enviar notificación por email
+    try {
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || '"Gescon360 Security" <no-reply@gescon360.es>',
+        to: userEmail,
+        subject: '🔐 Seguridad: Contraseña Actualizada',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+            <h2 style="color: #2c3e50;">Contraseña Actualizada</h2>
+            <p>Hola,</p>
+            <p>Te informamos que la contraseña de tu cuenta <strong>${userEmail}</strong> ha sido modificada correctamente el ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}.</p>
+            <p>Si no has realizado este cambio, por favor contacta inmediatamente con el administrador.</p>
+            <hr>
+            <p style="font-size: 12px; color: #7f8c8d;">Este es un mensaje automático de seguridad de Gescon360.</p>
+          </div>
+        `
+      });
+    } catch (mailError) {
+      console.error('Error enviando email de cambio de contraseña:', mailError);
     }
 
     res.json({ success: true, message: 'Contraseña actualizada. Se han cerrado todas las sesiones.' });
@@ -814,41 +906,45 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
   }
 });
 
-// Endpoint optimizado para estadísticas de CARGA DE TRABAJO (Workload)
+/// Endpoint optimizado para estadísticas de CARGA DE TRABAJO (Workload)
 app.get('/api/workload/stats', requireAuth, async (req, res) => {
   try {
-    // 1. Intentar usar RPC si existe (Máxima velocidad)
-    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_workload_stats');
+    // Consultar expedientes activos agrupados por gestor_id
+    const { data: expedientes, error } = await supabaseAdmin
+      .from('expedientes')
+      .select('gestor_id, estado');
     
-    if (!rpcError && rpcData) {
-      return res.json(rpcData);
-    }
-
-    // 2. Fallback: Cálculo en Node.js (Más rápido que en cliente)
-    // Solo traemos las columnas necesarias, no todo el objeto
-    const { data: tasks, error } = await supabaseAdmin
-      .from('tareas')
-      .select('responsable, estado');
-
     if (error) throw error;
-
+    
+    // Obtener perfiles para mapear gestor_id a nombres
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, email');
+    
+    const userMap = new Map();
+    if (profiles) {
+      profiles.forEach(p => userMap.set(p.id, p.full_name || p.email));
+    }
+    
     const stats = {};
-    const completedStates = new Set(['Completada', 'Recobrado', 'Rehusado NO cobertura', 'Archivado', 'Finalizado']);
-
-    (tasks || []).forEach(t => {
-      if (!t.responsable) return;
+    const completedStates = new Set(['Completado', 'Archivado', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos']);
+    
+    (expedientes || []).forEach(exp => {
+      if (!exp.gestor_id) return; // Skip sin asignar
       
-      if (!stats[t.responsable]) {
-        stats[t.responsable] = { active: 0, completed: 0 };
+      const responsable = userMap.get(exp.gestor_id) || 'Desconocido';
+      
+      if (!stats[responsable]) {
+        stats[responsable] = { active: 0, completed: 0 };
       }
-
-      if (completedStates.has(t.estado)) {
-        stats[t.responsable].completed++;
+      
+      if (completedStates.has(exp.estado)) {
+        stats[responsable].completed++;
       } else {
-        stats[t.responsable].active++;
+        stats[responsable].active++;
       }
     });
-
+    
     res.json(stats);
   } catch (e) {
     console.error('Error en /api/workload/stats:', e);
@@ -889,7 +985,7 @@ app.get('/api/reportes/estadisticas', async (req, res) => {
 
 app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
   try {
-    const { expedientes, opciones, fileName } = req.body; // opciones: { distribuirTareas, distribuirEquitativamente, ... }
+    const { expedientes, opciones, fileName, fileBase64 } = req.body; // Añadido fileBase64
     
     if (!Array.isArray(expedientes)) {
       return res.status(400).json({ error: 'Se requiere un array de expedientes' });
@@ -989,6 +1085,24 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
     // 3. FASE DE INSERCIÓN TRANSACCIONAL (Bulk Insert)
     // Postgres trata un insert múltiple como una sola transacción atómica.
     // Si falla CUALQUIER registro del lote, falla TODO el lote.
+    
+    // PREPARACIÓN DE DISTRIBUCIÓN (Antes de insertar para asignar gestor_id)
+    let responsables = [];
+    if (opciones?.distribuirTareas && opciones?.distribuirEquitativamente) {
+        const { data: users } = await supabaseAdmin
+            .from('profiles')
+            .select('id, full_name, email')
+            .eq('status', 'active');
+        responsables = users || [];
+        
+        if (responsables.length > 0) {
+            paraInsertar.forEach((exp, index) => {
+                const user = responsables[index % responsables.length];
+                exp.gestor_id = user.id; // Asignar ID de usuario al expediente
+            });
+        }
+    }
+
     let exitosos = [];
     
     if (paraInsertar.length > 0) {
@@ -1007,29 +1121,21 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
     // 4. FASE DE DISTRIBUCIÓN DE TAREAS (Opcional)
     let tareasCreadas = 0;
     if (opciones?.distribuirTareas && exitosos.length > 0) {
-        // Obtener usuarios activos para reparto
-        let responsables = [];
-        if (opciones.distribuirEquitativamente) {
-            const { data: users } = await supabaseAdmin
-                .from('profiles')
-                .select('full_name, email')
-                .eq('status', 'active');
-            responsables = users || [];
-        }
-
         // Preparar tareas
-        const tareas = exitosos.map((exp, index) => {
-            let responsable = null;
-            if (responsables.length > 0) {
-                const user = responsables[index % responsables.length];
-                responsable = user.full_name || user.email;
+        const tareas = exitosos.map((exp) => {
+            let responsableNombre = null;
+            
+            // Recuperar nombre del responsable asignado (si existe gestor_id)
+            if (exp.gestor_id && responsables.length > 0) {
+                const user = responsables.find(u => u.id === exp.gestor_id);
+                if (user) responsableNombre = user.full_name || user.email;
             }
 
             return {
                 num_siniestro: exp.num_siniestro,
-                responsable: responsable,
+                responsable: responsableNombre,
                 descripcion: `Gestión inicial del expediente ${exp.num_siniestro} (Importado)`,
-                prioridad: (exp.importe > 1500) ? 'Alta' : 'Media',
+                prioridad: (Number(exp.importe) > 1500) ? 'Alta' : 'Media',
                 fecha_limite: new Date().toISOString().split('T')[0],
                 estado: 'Pdte. revisión'
             };
@@ -1044,6 +1150,29 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
         }
     }
 
+    // 5. SUBIDA DE ARCHIVO A STORAGE (Nuevo)
+    let storagePath = null;
+    if (fileBase64 && fileName) {
+        try {
+            const buffer = Buffer.from(fileBase64, 'base64');
+            const cleanName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const path = `${Date.now()}_${cleanName}`;
+            
+            const { error: uploadError } = await supabaseAdmin
+                .storage
+                .from('imports') // Asegúrate de crear este bucket en Supabase
+                .upload(path, buffer, {
+                    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    upsert: false
+                });
+                
+            if (!uploadError) storagePath = path;
+            else console.warn('Advertencia: Falló la subida a Storage:', uploadError.message);
+        } catch (storageErr) {
+            console.error('Error procesando subida de archivo:', storageErr);
+        }
+    }
+
     // Registrar log de importación en el servidor
     if (fileName) {
       await supabaseAdmin.from('import_logs').insert({
@@ -1051,7 +1180,9 @@ app.post('/api/expedientes/importar', requireAuth, async (req, res) => {
         total_records: expedientes.length,
         duplicates_count: duplicadosDB.length,
         status: (erroresValidacion.length > 0 || exitosos.length === 0) ? 'Con Advertencias' : 'Completado',
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        storage_path: storagePath, // Guardar referencia (requiere columna en DB)
+        error_details: erroresValidacion.length > 0 ? erroresValidacion : null // Guardar JSON de errores
       });
     }
     
@@ -1359,26 +1490,25 @@ app.get('/api/responsables', requireAuth, async (req, res) => {
   try {
     console.log('DEBUG: /api/responsables - Solicitado por:', req.user?.email);
     
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers({ 
-      page: 1, 
-      perPage: 1000 
-    });
+    // CAMBIO: Usar tabla profiles para asegurar consistencia con la asignación de tareas
+    const { data: profiles, error: profilesError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, email, status')
+      .eq('status', 'active')
+      .order('full_name');
     
-    if (authError) {
-      console.error('Error obteniendo usuarios de Auth:', authError);
-      throw new Error(`Auth Error: ${authError.message}`);
+    if (profilesError) {
+      console.error('Error obteniendo perfiles:', profilesError);
+      throw new Error(`Profiles Error: ${profilesError.message}`);
     }
     
     // Mapear solo campos necesarios para dropdowns/selects
-    const responsables = (authData?.users || [])
-      .map(u => ({
-        id: u.id,
-        full_name: u.user_metadata?.full_name || u.email.split('@')[0],
-        email: u.email,
-        status: u.user_metadata?.status || 'active'
-      }))
-      .filter(u => u.status === 'active')
-      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    const responsables = profiles.map(p => ({
+        id: p.id,
+        full_name: p.full_name || p.email,
+        email: p.email,
+        status: p.status || 'active'
+    }));
     
     console.log('DEBUG: /api/responsables - Devolviendo', responsables.length, 'responsables');
     res.json(responsables);

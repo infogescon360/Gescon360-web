@@ -112,6 +112,30 @@ function applyMenuAccessControl() {
     }
 }
 
+// Función para inyectar el botón de cambio de contraseña en el menú lateral
+function addChangePasswordButtonToSidebar() {
+    const sidebarMenu = document.querySelector('.sidebar-menu');
+    // Evitar duplicados
+    if (sidebarMenu && !document.getElementById('changePasswordLink')) {
+        const li = document.createElement('li');
+        li.className = 'nav-item mt-2'; 
+        li.innerHTML = `
+            <a href="#" class="nav-link" onclick="openChangePasswordModal(false); return false;" id="changePasswordLink" title="Cambiar mi contraseña">
+                <i class="bi bi-shield-lock"></i>
+                <span>Cambiar Contraseña</span>
+            </a>
+        `;
+        
+        // Insertar antes del botón de cerrar sesión (asumiendo que es el último o tiene onclick="logout()")
+        const logoutLink = document.querySelector('a[onclick="logout()"]');
+        if (logoutLink && logoutLink.parentElement) {
+            sidebarMenu.insertBefore(li, logoutLink.parentElement);
+        } else {
+            sidebarMenu.appendChild(li);
+        }
+    }
+}
+
 // Función para cargar configuración y arrancar
 async function initAppConfig() {
     try {
@@ -174,17 +198,8 @@ async function initAppConfig() {
 }
 
 // Global Variables
-let currentSection = 'dashboard';
 let currentUser = null;
-let expedientesData = [];
-let tasksData = [];
 let duplicatesData = [];
-let currentDate = new Date();
-let pickerDate = new Date();
-let selectedDateElement = null;
-let selectedDateId = null;
-let selectedDateValue = null;
-let editingResponsibleId = null;
 let usersData = [];
 let activeTaskFilters = {};
 let monthlyChartInstance = null;
@@ -249,23 +264,6 @@ let responsiblesData = [
     { id: 3, name: 'Carlos Rodríguez', email: 'carlos.rodriguez@empresa.com', status: 'available', distribution: 'yes', activeTasks: 3, completedTasks: 31 },
     { id: 4, name: 'Ana Martínez', email: 'ana.martinez@empresa.com', status: 'sick', distribution: 'no', activeTasks: 0, completedTasks: 15, returnDate: '2024-12-15' }
 ];
-
-// Visual Debugger - DESACTIVADO
-function visualDebugger() {
-    // Desactivado para ocultar el panel de depuración
-}
-
-// Debug function - DESACTIVADO
-function debug(message, type = 'info') {
-    // Desactivado para ocultar el panel de depuración
-}
-
-// Handle Google Apps Script errors
-function handleGASError(error, operation) {
-    console.error(`Error in ${operation}: ${error.message}`);
-    showToast('danger', 'Error', `Ha ocurrido un error en ${operation}: ${error.message}`);
-    hideLoading();
-}
 
 // --- SISTEMA GLOBAL DE MANEJO DE ERRORES ---
 // Captura cualquier promesa rechazada que no tenga un bloque .catch() asociado
@@ -530,9 +528,9 @@ function setupStatusArchiveLogic() {
             const finalStates = ['Datos NO válidos', 'Rehusado NO cobertura', 'Recobrado'];
 
             if (finalStates.includes(statusSelect.value)) {
-                archiveOption.style.display = 'block'; // Muestra la opción
+                archiveOption.classList.remove('d-none'); // Muestra la opción
             } else {
-                archiveOption.style.display = 'none';  // Oculta la opción
+                archiveOption.classList.add('d-none');  // Oculta la opción
                 document.getElementById('archive-checkbox').checked = false; // Resetea el checkbox
             }
         });
@@ -590,6 +588,7 @@ async function checkAuthStatus() {
             
             // Aplicar control de acceso al menú lateral
             applyMenuAccessControl();
+            addChangePasswordButtonToSidebar();
             
             // Mostrar elementos del dashboard explícitamente
             const sidebar = document.querySelector('.sidebar');
@@ -612,33 +611,6 @@ async function checkAuthStatus() {
         hideLoading();
         showAuth();
     }
-}
-
-// ----- Seguridad: deshabilitar la creación de usuarios admin desde el cliente -----
-// Reemplaza la implementación actual de registerFirstUser por esta NO-OP segura.
-// Si prefieres no sobrescribir, añade esta función al final de script.js para
-// que anule la definición previa (la última definición gana en JS).
-
-function registerFirstUser(...args) {
-    // Evitar cualquier intento de usar la Admin API desde el navegador.
-    console.warn('registerFirstUser() llamada en cliente bloqueada por seguridad. Use un endpoint server-side para crear usuarios admin.');
-    // Mostrar mensaje amigable al usuario (opcional). Puedes eliminar el alert si no quieres notificaciones.
-    try {
-        // Intentamos mostrar un mensaje en pantalla si existe un contenedor de alertas
-        const alertContainer = document.getElementById('loginAlert') || document.getElementById('debugConsole');
-        if (alertContainer) {
-            alertContainer.style.display = 'block';
-            alertContainer.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> La creación de administradores desde el cliente está deshabilitada por seguridad. Contacta con el administrador del sistema.';
-        } else {
-            // fallback
-            // eslint-disable-next-line no-alert
-            alert('La creación de administradores desde el cliente está deshabilitada por seguridad. Contacta con el administrador del sistema.');
-        }
-    } catch (e) {
-        // No bloquear la ejecución por errores de UI
-    }
-    // No realizar ninguna llamada de red ni modificar el estado.
-    return Promise.resolve({ error: 'client_creation_disabled' });
 }
 
 // Setup event listeners
@@ -805,72 +777,212 @@ async function login() {
     loginButton.disabled = true;
 
     try {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({
-            email: email,
-            password: password
+        // Usar endpoint del backend para login (Rate Limiting + Validación)
+        const response = await fetch('https://gescon360-web.onrender.com/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
         });
 
-        if (error) throw error;
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Error en login');
+        }
 
         // Hide loading
         loginButtonText.classList.remove('d-none');
         loginSpinner.classList.add('d-none');
         loginButton.disabled = false;
 
-        if (data.user) {
-            // Guardar sesión
-            if (data.session) localStorage.setItem('supabase.auth.token', data.session.access_token);
-
-            // Obtener perfil completo (nombre y rol)
-            let fullName = data.user.email.split('@')[0];
-            let isAdmin = false;
-
-            try {
-                // Usar endpoint del backend para evitar error de recursión RLS
-                const response = await fetch('/api/profile/me', {
-                    headers: {
-                        'Authorization': `Bearer ${data.session.access_token}`
-                    }
-                });
-
-                if (response.ok) {
-                    const profile = await response.json();
-                    if (profile) {
-                        if (profile.full_name) fullName = profile.full_name;
-                        if (profile.role === 'admin') isAdmin = true;
-                    }
-                }
-            } catch (e) {
-                console.warn('Error obteniendo perfil:', e);
-            }
-
-            currentUser = {
-                email: data.user.email,
-                name: fullName,
-                id: data.user.id,
-                isAdmin: isAdmin
-            };
-            
-            document.body.classList.add('authenticated');
-            
-            // Mostrar dashboard explícitamente
-            const sidebar = document.querySelector('.sidebar');
-            const mainContent = document.querySelector('.main-content');
-            if (sidebar) sidebar.style.display = 'block';
-            if (mainContent) mainContent.style.display = 'block';
-            
-            initInactivityTimer();
-            showApp();
-            initializeApp();
-            hideCreateAdminButton(); // Hide admin button after login
-            showToast('success', 'Bienvenido', 'Has iniciado sesión correctamente');
+        // Guardar token y datos de usuario
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        // Establecer sesión en Supabase Client para compatibilidad
+        if (data.accessToken) {
+            await supabaseClient.auth.setSession({
+                access_token: data.accessToken,
+                refresh_token: data.accessToken // Fallback
+            });
         }
+
+        // Obtener perfil completo (nombre y rol)
+        let fullName = data.user.email.split('@')[0];
+        let isAdmin = data.user.role === 'admin' || data.user.isSuperAdmin;
+
+        try {
+            const profileResponse = await fetch('/api/profile/me', {
+                headers: {
+                    'Authorization': `Bearer ${data.accessToken}`
+                }
+            });
+
+            if (profileResponse.ok) {
+                const profile = await profileResponse.json();
+                if (profile) {
+                    if (profile.full_name) fullName = profile.full_name;
+                    // Confirmar rol desde perfil si es necesario
+                }
+            }
+        } catch (e) {
+            console.warn('Error obteniendo perfil:', e);
+        }
+
+        currentUser = {
+            email: data.user.email,
+            name: fullName,
+            id: data.user.id,
+            isAdmin: isAdmin
+        };
+        
+        document.body.classList.add('authenticated');
+        
+        // Mostrar dashboard explícitamente
+        const sidebar = document.querySelector('.sidebar');
+        const mainContent = document.querySelector('.main-content');
+        if (sidebar) sidebar.style.display = 'block';
+        if (mainContent) mainContent.style.display = 'block';
+        
+        initInactivityTimer();
+        showApp();
+        initializeApp();
+        hideCreateAdminButton(); // Hide admin button after login
+        showToast('success', 'Bienvenido', 'Has iniciado sesión correctamente');
+
+        // Verificar si se requiere cambio de contraseña obligatorio
+        if (data.mustChangePassword) {
+            // Pequeño delay para asegurar que la UI cargó
+            setTimeout(() => openChangePasswordModal(true), 500);
+        }
+
     } catch (error) {
         console.error('Login error:', error);
-        loginButtonText.classList.remove('d-none');
-        loginSpinner.classList.add('d-none');
-        loginButton.disabled = false;
-        showToast('danger', 'Error de autenticación', error.message || 'Correo o contraseña incorrectos');
+        showToast('danger', 'Error de inicio de sesión', error.message);
+        
+        // Restaurar estado del botón
+        document.getElementById('loginButtonText').classList.remove('d-none');
+        document.getElementById('loginSpinner').classList.add('d-none');
+        document.getElementById('loginButton').disabled = false;
+    }
+}
+
+// --- GESTIÓN DE CAMBIO DE CONTRASEÑA ---
+
+function getOrCreateChangePasswordModal() {
+    let modalEl = document.getElementById('changePasswordModal');
+    if (!modalEl) {
+        const modalHtml = `
+        <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title" id="changePasswordTitle"><i class="bi bi-shield-lock"></i> Cambiar Contraseña</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="btnCloseChangePass"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="passwordChangeAlert" class="alert alert-warning d-none">
+                            <i class="bi bi-exclamation-triangle"></i> Tu contraseña ha caducado o es el primer inicio. Debes cambiarla.
+                        </div>
+                        <form id="changePasswordForm">
+                            <div class="mb-3">
+                                <label class="form-label">Contraseña Actual</label>
+                                <input type="password" class="form-control" id="cpCurrent" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Nueva Contraseña</label>
+                                <input type="password" class="form-control" id="cpNew" required>
+                                <div class="form-text small">
+                                    Mínimo 12 caracteres, letras, números y un carácter especial.
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Confirmar Nueva Contraseña</label>
+                                <input type="password" class="form-control" id="cpConfirm" required>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnCancelChangePass">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="submitPasswordChange()">Actualizar Contraseña</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('changePasswordModal');
+    }
+    return modalEl;
+}
+
+function openChangePasswordModal(forced = false) {
+    const modalEl = getOrCreateChangePasswordModal();
+    const form = document.getElementById('changePasswordForm');
+    form.reset();
+
+    const alertBox = document.getElementById('passwordChangeAlert');
+    const btnClose = document.getElementById('btnCloseChangePass');
+    const btnCancel = document.getElementById('btnCancelChangePass');
+
+    if (forced) {
+        alertBox.classList.remove('d-none');
+        // Deshabilitar cierre si es obligatorio
+        btnClose.style.display = 'none';
+        btnCancel.style.display = 'none';
+    } else {
+        alertBox.classList.add('d-none');
+        btnClose.style.display = 'block';
+        btnCancel.style.display = 'block';
+    }
+
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+async function submitPasswordChange() {
+    const current = document.getElementById('cpCurrent').value;
+    const newPass = document.getElementById('cpNew').value;
+    const confirm = document.getElementById('cpConfirm').value;
+
+    if (newPass !== confirm) {
+        showToast('warning', 'Error', 'Las nuevas contraseñas no coinciden.');
+        return;
+    }
+
+    showLoading();
+    try {
+        const session = await supabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        
+        const response = await fetch('/api/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ currentPassword: current, newPassword: newPass })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Error al cambiar la contraseña');
+        }
+
+        showToast('success', 'Éxito', 'Contraseña actualizada correctamente. Por favor inicia sesión de nuevo.');
+        
+        // Cerrar modal y sesión para forzar re-login con nueva pass
+        const modalEl = document.getElementById('changePasswordModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+        
+        setTimeout(() => logout(), 2000);
+
+    } catch (error) {
+        console.error('Error changing password:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -888,6 +1000,10 @@ async function logout() {
             supabaseClient.removeChannel(realtimeSubscription);
             realtimeSubscription = null;
         }
+
+        // Limpiar localStorage
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
 
         // Limpiar estado de autenticación y timers
         document.body.classList.remove('authenticated');
@@ -907,6 +1023,11 @@ async function logout() {
             supabaseClient.removeChannel(realtimeSubscription);
             realtimeSubscription = null;
         }
+
+        // Limpiar localStorage también en caso de error
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+
         document.body.classList.remove('authenticated');
         clearTimeout(inactivityTimer);
         const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
@@ -1347,7 +1468,7 @@ async function addNewTask() {
     
     document.getElementById('taskId').value = '';
     document.getElementById('char-count').textContent = '0';
-    document.getElementById('archive-option').style.display = 'none';
+    document.getElementById('archive-option').classList.add('d-none');
     
     // Configurar campo para Nº SGR (Reemplaza Nº Siniestro)
     const expInput = document.getElementById('taskExpedient');
@@ -2270,7 +2391,7 @@ function renderResponsiblesTable(users, stats = {}) {
     const tbody = table.querySelector('tbody');
 
     users.forEach(user => {
-        const name = user.full_name || user.email;
+        const name = (user.full_name || user.email).trim();
         // Buscar estadísticas por nombre o email
         const userStats = stats[name] || stats[user.email] || { active: 0, completed: 0 };
         
@@ -2393,7 +2514,7 @@ function editUser(id) {
     document.getElementById('userFullName').value = user.full_name || '';
     document.getElementById('userRole').value = user.role || 'user';
     document.getElementById('userModalTitle').textContent = 'Editar Usuario';
-    document.getElementById('passwordHelp').style.display = 'block';
+    document.getElementById('passwordHelp').classList.remove('d-none');
     document.getElementById('userPassword').required = false;
 
     const modal = new bootstrap.Modal(modalEl);
@@ -2421,7 +2542,7 @@ function getOrCreateUserModal() {
                             <div class="mb-3">
                                 <label for="userPassword" class="form-label">Contraseña</label>
                                 <input type="password" class="form-control" id="userPassword">
-                                <div id="passwordHelp" class="form-text" style="display:none;">Dejar en blanco para mantener la actual.</div>
+                                <div id="passwordHelp" class="form-text d-none">Dejar en blanco para mantener la actual.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="userFullName" class="form-label">Nombre Completo</label>
@@ -2459,7 +2580,7 @@ function createNewUser() {
     
     const pwdInput = document.getElementById('userPassword');
     pwdInput.required = true;
-    document.getElementById('passwordHelp').style.display = 'none';
+    document.getElementById('passwordHelp').classList.add('d-none');
 
     const modal = new bootstrap.Modal(modalEl);
     modal.show();
@@ -2532,6 +2653,50 @@ function saveWorkloadConfig() {
     showToast('success', 'Guardado', 'La configuración de carga de trabajo ha sido guardada correctamente (simulado).');
 }
 
+/**
+ * Inicia el proceso de rebalanceo de carga de trabajo, con una simulación opcional.
+ * Llama al endpoint del backend para ejecutar la lógica de negocio.
+ * @param {boolean} isSimulation - Si es true, solo simula el rebalanceo. Si es false, lo ejecuta.
+ */
+async function rebalanceActiveWorkload(isSimulation = false) {
+    const mode = isSimulation ? 'simulate' : 'execute';
+    const title = isSimulation ? 'Simular Rebalanceo de Carga' : 'Ejecutar Rebalanceo de Carga';
+    const message = isSimulation 
+        ? '¿Deseas simular un rebalanceo de carga? No se moverán tareas, solo se mostrará el resultado de la redistribución.'
+        : '<strong>PELIGRO:</strong> ¿Estás seguro de que deseas ejecutar el rebalanceo de carga?<br><br>Las tareas se moverán entre los usuarios activos para nivelar la carga de trabajo. Esta acción no se puede deshacer.';
+    const confirmText = isSimulation ? 'Simular' : 'Ejecutar Rebalanceo';
+    const confirmClass = isSimulation ? 'btn-info' : 'btn-danger';
+
+    const confirmed = await showConfirmModal(title, message, confirmText, confirmClass);
+    if (!confirmed) {
+        showToast('info', 'Cancelado', 'La operación de rebalanceo ha sido cancelada.');
+        return;
+    }
+
+    showLoading();
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No hay sesión activa');
+
+        const response = await fetch(`/admin/rebalance-workload?mode=${mode}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Error en el servidor durante el rebalanceo');
+
+        showToast(isSimulation ? 'info' : 'success', 'Rebalanceo', result.message);
+        
+        if (!isSimulation) await loadWorkloadStats();
+    } catch (error) {
+        console.error('Error en rebalanceo de carga:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
 // Función para cargar estadísticas de carga de trabajo
 async function loadWorkloadStats() {
     console.log('Cargando estadísticas de carga de trabajo...');
@@ -2561,7 +2726,7 @@ async function loadWorkloadStats() {
 
         tableBody.innerHTML = '';
         users.forEach(user => {
-            const name = user.full_name || user.email;
+            const name = (user.full_name || user.email).trim();
             const stat = workloadStats[name] || workloadStats[user.email] || { active: 0, completed: 0 };
             
             const maxLoadReference = 20; 
@@ -3092,7 +3257,20 @@ async function importarExpedientes() {
     try {
         // PASO 1: Parsear archivo con SheetJS
         showToast('info', 'Parseando', 'Leyendo archivo...');
-        const data = await parsearArchivoImportacion(file, file.name);
+        
+        // Helper para leer Base64
+        const getBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
+        });
+
+        // Ejecutar en paralelo: Parsing y Lectura Base64
+        const [data, fileBase64] = await Promise.all([
+            parsearArchivoImportacion(file, file.name),
+            getBase64(file)
+        ]);
         
         if (!data || data.length === 0) {
             showToast('warning', 'Archivo vacío', 'El archivo no contiene datos válidos.');
@@ -3143,7 +3321,11 @@ async function importarExpedientes() {
             return;
         }
         
-        const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar, file.name);
+        // Empaquetar opciones
+        const opcionesImportacion = { distribuirTareas, distribuirEquitativamente };
+        
+        // Enviar a backend incluyendo el archivo Base64
+        const resultado = await insertarExpedientesEnSupabase(expedientesParaInsertar, file.name, opcionesImportacion, fileBase64);
 
         // Verificar referencia generada (si la DB tiene trigger/columna generada)
         if (resultado.expedientes && resultado.expedientes.length > 0) {
@@ -3176,26 +3358,6 @@ async function importarExpedientes() {
 // ============================================================================
 // GESTIÓN DE REGISTRO DE IMPORTACIONES (LOGS)
 // ============================================================================
-
-async function saveImportLog(logData) {
-    try {
-        const { error } = await supabaseClient
-            .from('import_logs')
-            .insert([{
-                file_name: logData.fileName,
-                total_records: logData.totalRecords,
-                duplicates_count: logData.duplicates,
-                status: logData.status,
-                created_at: new Date().toISOString()
-            }]);
-            
-        if (error) {
-            console.log('Log de importación no guardado en DB (tabla no existe o error).');
-        }
-    } catch (e) {
-        // console.error('Error saving import log:', e);
-    }
-}
 
 async function loadImportLogs() {
     const tableBody = document.getElementById('importLogTable');
@@ -3324,10 +3486,69 @@ function downloadImportFile(id, fileName) {
     showToast('info', 'Descarga no disponible', 'El archivo original no está almacenado. Se requiere configurar Supabase Storage.');
 }
 
-function viewImportErrors(id) {
-    // Nota: Esto requeriría guardar un JSON de errores en la tabla import_logs
-    console.log(`Solicitando detalles de errores para Log ID: ${id}`);
-    showToast('info', 'Detalles', 'Visualización de detalles de error en desarrollo.');
+async function viewImportErrors(id) {
+    showLoading();
+    try {
+        // Obtener detalles específicos del log (incluyendo JSON de errores)
+        const { data: log, error } = await supabaseClient
+            .from('import_logs')
+            .select('error_details, status, file_name')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+
+        if (!log.error_details || log.error_details.length === 0) {
+            showToast('info', 'Sin errores', 'Este registro no contiene detalles de errores.');
+            return;
+        }
+
+        const modalEl = getOrCreateDetailsModal();
+        const modalTitle = document.getElementById('detailsModalTitle');
+        const modalBody = document.getElementById('detailsModalBody');
+
+        modalTitle.textContent = `Detalles de Importación: ${log.file_name}`;
+        
+        let html = `<div class="alert alert-${log.status === 'Completado' ? 'success' : 'warning'} mb-3">
+                        Estado: <strong>${log.status}</strong>
+                    </div>
+                    <h6 class="mb-2">Errores Detectados (${log.error_details.length}):</h6>
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                        <table class="table table-sm table-bordered table-striped">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th style="width: 50px;">#</th>
+                                    <th>Error</th>
+                                    <th>Datos del Registro</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+        
+        log.error_details.forEach((err, index) => {
+            // Formatear datos del expediente para visualización compacta
+            const expData = err.expediente ? JSON.stringify(err.expediente) : 'N/A';
+            const shortExpData = expData.length > 120 ? expData.substring(0, 120) + '...' : expData;
+            
+            html += `<tr>
+                        <td>${index + 1}</td>
+                        <td class="text-danger small">${err.error || 'Error desconocido'}</td>
+                        <td><small class="text-muted font-monospace" title="${expData.replace(/"/g, '&quot;')}">${shortExpData}</small></td>
+                     </tr>`;
+        });
+
+        html += `</tbody></table></div>`;
+        
+        modalBody.innerHTML = html;
+        
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+
+    } catch (e) {
+        console.error('Error fetching log details:', e);
+        showToast('danger', 'Error', 'No se pudieron cargar los detalles: ' + e.message);
+    } finally {
+        hideLoading();
+    }
 }
 
         // ============================================================================
@@ -3431,16 +3652,26 @@ async function verificarYEliminarDuplicados(expedientes) {
             const html = `<p>Se han detectado <strong>${duplicados.length}</strong> expedientes que coinciden con registros existentes (por Nº Siniestro o Póliza).</p>
                           <p>Se han movido a la bandeja de Duplicados para su revisión manual.</p>`;
             
+                      
             // No esperamos la respuesta para no bloquear la UI
-            supabaseClient.functions.invoke('send-email', {
-                body: { to: adminEmail, subject, html }
-            }).catch(err => console.error('Error enviando aviso duplicados:', err));
+            supabaseClient.auth.getSession().then(({ data: { session } }) => {
+                if (session) {
+                    fetch('/api/send-email', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`
+                        },
+                        body: JSON.stringify({ to: adminEmail, subject, html })
+                    }).catch(err => console.error('Error enviando aviso duplicados:', err));
+                }
+            });
         }
         
         return { nuevos, duplicados };
     } catch (error) {
         console.error('Error verificando duplicados:', error);
-        // En caso de error, devolver todos como nuevos para no bloquear la importación
+        // En caso de error, devolvemos los originales para no bloquear la importación
         return { nuevos: expedientes, duplicados: [] };
     }
 }
@@ -3574,10 +3805,13 @@ function normalizarExpediente(row, fileName, index) {
 }
 
 // Función para insertar expedientes en Supabase
-async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {}) {
+async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {}, fileBase64 = null) {
     try {
         const session = await supabaseClient.auth.getSession();
         if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
+
+        const payload = { expedientes, fileName, opciones };
+        if (fileBase64) payload.fileBase64 = fileBase64;
 
         const response = await fetch('/api/expedientes/importar', {
             method: 'POST',
@@ -3585,7 +3819,7 @@ async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.data.session.access_token}`
             },
-            body: JSON.stringify({ expedientes, fileName, opciones })
+            body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
@@ -3603,6 +3837,32 @@ async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {
     } catch (error) {
         throw new Error('Error al importar expedientes: ' + error.message);
     }
+}
+
+function getOrCreateDetailsModal() {
+    let modalEl = document.getElementById('detailsModal');
+    if (!modalEl) {
+        const modalHtml = `
+        <div class="modal fade" id="detailsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="detailsModalTitle">Detalles</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="detailsModalBody">
+                        <!-- Contenido dinámico -->
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('detailsModal');
+    }
+    return modalEl;
 }
 
 function openDatePicker(element, id) {
@@ -3889,13 +4149,27 @@ async function enviarResumenTareasPorGestor() {
                     </div>
                 `;
 
-                // Llamar a Edge Function
-                const { error: funcError } = await supabaseClient.functions.invoke('send-email', {
-                    body: { to: email, subject: `📝 Tus Tareas Pendientes - ${new Date().toLocaleDateString()}`, html: htmlBody }
-                });
+                // Llamar a Backend API en lugar de Edge Function (evita FunctionsFetchError)
+                try {
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    const response = await fetch('/api/send-email', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session?.access_token}`
+                        },
+                        body: JSON.stringify({ 
+                            to: email, 
+                            subject: `📝 Tus Tareas Pendientes - ${new Date().toLocaleDateString()}`, 
+                            html: htmlBody 
+                        })
+                    });
 
-                if (funcError) console.error(`Error enviando a ${email}:`, funcError);
-                else emailsSent++;
+                    if (response.ok) emailsSent++;
+                    else console.warn(`Error enviando a ${email}:`, await response.text());
+                } catch (e) {
+                    console.error(`Excepción enviando a ${email}:`, e);
+                }
             }
         }
 
@@ -4113,6 +4387,7 @@ async function resetBaseDeDatos() {
 // Exponer funciones globalmente
 window.limpiarExpedientesHuerfanos = limpiarExpedientesHuerfanos;
 window.resetBaseDeDatos = resetBaseDeDatos;
+window.rebalanceActiveWorkload = rebalanceActiveWorkload;
 
 // ============================================================================
 // PAGINACIÓN DE TAREAS
