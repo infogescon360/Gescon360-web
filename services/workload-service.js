@@ -52,14 +52,8 @@ export class WorkloadService {
    * Retorna: Array con estadísticas por usuario
    */
   static async getCurrentWorkloadStats() {
-    const { data, error } = await supabaseAdmin
-      .rpc('get_workload_stats');
-    
-    if (error) {
-      console.error('Error fetching workload stats:', error);
-      throw error;
-    }
-    
+    const { data, error } = await supabaseAdmin.rpc('get_workload_stats');
+    if (error) throw error;
     return data || [];
   }
 
