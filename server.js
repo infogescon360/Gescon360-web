@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import crypto from 'crypto'; // Necesario para hash de historial
 import nodemailer from 'nodemailer';
-import { WorkloadService } from './workload-service.js';
+import { WorkloadService } from './services/workload-service.js';
 
 const app = express();
 
