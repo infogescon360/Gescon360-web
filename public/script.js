@@ -2329,17 +2329,17 @@ async function loadResponsibles() {
 
     try {
         // Usar WorkloadAPI para obtener estadísticas completas
-        const response = await workloadAPI.getStats();
+        const result = await workloadAPI.getStats();
         
-        if (response.success) {
-            const stats = response.data;
-            renderResponsiblesTable(stats);
-            
-            // Actualizar timestamp si existe elemento
-            const lastUpdate = document.getElementById('ultima-actualizacion');
-            if (lastUpdate && response.timestamp) {
-                lastUpdate.textContent = new Date(response.timestamp).toLocaleTimeString();
-            }
+        // FIX: Extraer el array correcto
+        const stats = Array.isArray(result) ? result : (result.data || []);
+        
+        renderResponsiblesTable(stats);
+        
+        // Actualizar timestamp si existe elemento
+        const lastUpdate = document.getElementById('ultima-actualizacion');
+        if (lastUpdate && !Array.isArray(result) && result.timestamp) {
+            lastUpdate.textContent = new Date(result.timestamp).toLocaleTimeString();
         }
     } catch (error) {
         console.error('Error loading responsibles:', error);
@@ -2873,13 +2873,10 @@ async function loadWorkloadStats() {
         }
 
         // Usar el API helper que ya gestiona la autenticación
-        const response = await workloadAPI.getStats();
+        const result = await workloadAPI.getStats();
 
-        if (!response.success) {
-            throw new Error(response.error || 'Error al obtener estadísticas');
-        }
-
-        const stats = response.data;
+        // FIX: Extraer el array correcto
+        const stats = Array.isArray(result) ? result : (result.data || []);
         
         // Actualizar caché
         workloadCache.data = stats;
