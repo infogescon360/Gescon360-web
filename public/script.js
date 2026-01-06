@@ -2863,10 +2863,6 @@ async function loadWorkloadStats() {
 
     showLoading();
     try {
-        const session = await supabaseClient.auth.getSession();
-        const token = session?.data?.session?.access_token;
-        if (!token) throw new Error('No hay sesión activa');
-        
         // Verificar caché
         const now = Date.now();
         if (workloadCache.data && (now - workloadCache.timestamp < workloadCache.ttl)) {
@@ -2876,15 +2872,14 @@ async function loadWorkloadStats() {
             return;
         }
 
-        // Usar el endpoint correcto de estadísticas (que usa la vista materializada)
-        const response = await fetch('/api/workload/stats', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (!response.ok) throw new Error('Error al obtener estadísticas');
+        // Usar el API helper que ya gestiona la autenticación
+        const response = await workloadAPI.getStats();
 
-        const jsonResponse = await response.json();
-        const stats = jsonResponse.data || jsonResponse; // Soporte para {success: true, data: ...} o array directo
+        if (!response.success) {
+            throw new Error(response.error || 'Error al obtener estadísticas');
+        }
+
+        const stats = response.data;
         
         // Actualizar caché
         workloadCache.data = stats;
