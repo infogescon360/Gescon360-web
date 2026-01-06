@@ -128,7 +128,7 @@ function addChangePasswordButtonToSidebar() {
         
         // Insertar antes del botón de cerrar sesión (asumiendo que es el último o tiene onclick="logout()")
         const logoutLink = document.querySelector('a[onclick="logout()"]');
-        if (logoutLink && logoutLink.parentElement) {
+        if (logoutLink && logoutLink.parentElement && logoutLink.parentElement.parentNode === sidebarMenu) {
             sidebarMenu.insertBefore(li, logoutLink.parentElement);
         } else {
             sidebarMenu.appendChild(li);
