@@ -2422,7 +2422,8 @@ async function loadUsers() {
         const session = await supabaseClient.auth.getSession();
         if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
 
-        const response = await fetch('/api/responsables', {
+        // CORRECCIÓN OPTIMIZACIÓN 4: Usar endpoint de administración completo
+        const response = await fetch('/admin/users', {
             headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
         });
 
@@ -2706,6 +2707,13 @@ async function rebalanceActiveWorkload(isSimulation = false) {
     }
 }
 
+// OPTIMIZACIÓN 6: CACHÉ FRONTEND
+const workloadCache = {
+  data: null,
+  timestamp: 0,
+  ttl: 30000 // 30 segundos
+};
+
 // Función para cargar estadísticas de carga de trabajo
 async function loadWorkloadStats() {
     console.log('Cargando estadísticas de carga de trabajo...');
@@ -2751,29 +2759,31 @@ async function loadWorkloadStats() {
         const session = await supabaseClient.auth.getSession();
         const token = session?.data?.session?.access_token;
         if (!token) throw new Error('No hay sesión activa');
+        
+        // Verificar caché
+        const now = Date.now();
+        if (workloadCache.data && (now - workloadCache.timestamp < workloadCache.ttl)) {
+            console.log('Usando caché de workload');
+            renderWorkloadTable(workloadCache.data, tableBody);
+            hideLoading();
+            return;
+        }
 
-        const response = await fetch('/api/workload/distribution', {
+        // Usar el endpoint correcto de estadísticas (que usa la vista materializada)
+        const response = await fetch('/api/workload/stats', {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        if (!response.ok) throw new Error('Error al obtener datos de distribución');
+        if (!response.ok) throw new Error('Error al obtener estadísticas');
 
-        const stats = await response.json();
+        const jsonResponse = await response.json();
+        const stats = jsonResponse.data || jsonResponse; // Soporte para {success: true, data: ...} o array directo
         
-        tableBody.innerHTML = stats.map(user => `
-            <tr>
-                <td>${user.full_name || user.email}</td>
-                <td><span class="status-badge status-${user.status === 'active' ? 'available' : 'unavailable'}">${user.status === 'active' ? 'Activo' : user.status}</span></td>
-                <td>${user.tareas_activas || 0}</td>
-                <td>${user.tareas_completadas || 0}</td>
-                <td>${user.expedientes_activos || 0}</td>
-                <td>
-                    <span class="badge ${user.tareas_activas > 10 ? 'bg-danger' : 'bg-success'}">
-                        ${user.tareas_activas > 10 ? 'Alta Carga' : 'Disponible'}
-                    </span>
-                </td>
-            </tr>
-        `).join('');
+        // Actualizar caché
+        workloadCache.data = stats;
+        workloadCache.timestamp = now;
+
+        renderWorkloadTable(stats, tableBody);
 
     } catch (error) {
         console.error(error);
@@ -2781,6 +2791,23 @@ async function loadWorkloadStats() {
     } finally {
         hideLoading();
     }
+}
+
+function renderWorkloadTable(stats, tableBody) {
+    tableBody.innerHTML = stats.map(user => `
+        <tr>
+            <td>${user.user_name || user.email}</td>
+            <td><span class="status-badge status-${user.status === 'active' ? 'available' : 'unavailable'}">${user.status === 'active' ? 'Activo' : user.status}</span></td>
+            <td>${user.tareas_activas || 0}</td>
+            <td>${user.tareas_completadas || 0}</td>
+            <td>${user.importe_total ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(user.importe_total) : '€0,00'}</td>
+            <td>
+                <span class="badge ${user.tareas_activas > 10 ? 'bg-danger' : 'bg-success'}">
+                    ${user.tareas_activas > 10 ? 'Alta Carga' : 'Disponible'}
+                </span>
+            </td>
+        </tr>
+    `).join('');
 }
 
 function loadSystemLimits() {
