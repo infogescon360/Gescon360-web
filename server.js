@@ -909,7 +909,7 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
 
 // --- NUEVOS ENDPOINTS DE DISTRIBUCIÓN (WorkloadService) ---
 
-// Endpoint: Obtener estadísticas de carga
+// Endpoint: Obtener distribución (Alias)
 app.get('/api/workload/distribution', requireAuth, async (req, res) => {
   try {
     const stats = await WorkloadService.getCurrentWorkload();
@@ -917,6 +917,17 @@ app.get('/api/workload/distribution', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('Error en /api/workload/distribution:', e);
     // Fallback si la tabla workload_stats no existe
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 1. Obtener estadísticas de carga (Reemplaza implementación anterior)
+app.get('/api/workload/stats', requireAuth, async (req, res) => {
+  try {
+    const stats = await WorkloadService.getCurrentWorkloadStats();
+    res.json(stats);
+  } catch (e) {
+    console.error('Error en /api/workload/stats:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -942,10 +953,11 @@ app.post('/api/workload/distribute-equitably', requireAuth, async (req, res) => 
   }
 });
 
-// Endpoint: Rebalancear carga activa
+// 5. Rebalancear carga manualmente (Actualizado para usar rebalanceWorkload)
 app.post('/api/workload/rebalance', requireAuth, async (req, res) => {
   try {
-    const result = await WorkloadService.rebalanceActiveWorkload(req.user.id);
+    // Nota: rebalanceWorkload hace un rebalanceo completo
+    const result = await WorkloadService.rebalanceWorkload();
     res.json(result);
   } catch (e) {
     console.error('Error rebalanceando:', e);
@@ -964,48 +976,51 @@ app.post('/api/workload/redistribute-unavailable', requireAuth, async (req, res)
   }
 });
 
-/// Endpoint optimizado para estadísticas de CARGA DE TRABAJO (Workload)
-app.get('/api/workload/stats', requireAuth, async (req, res) => {
+// 2. Marcar usuario como inactivo (redistribuir tareas diarias)
+app.post('/api/workload/user/:userId/deactivate', requireAuth, async (req, res) => {
   try {
-    // Consultar expedientes activos agrupados por gestor_id
-    const { data: expedientes, error } = await supabaseAdmin
-      .from('expedientes')
-      .select('gestor_id, estado');
-    
-    if (error) throw error;
-    
-    // Obtener perfiles para mapear gestor_id a nombres
-    const { data: profiles } = await supabaseAdmin
-      .from('profiles')
-      .select('id, full_name, email');
-    
-    const userMap = new Map();
-    if (profiles) {
-      profiles.forEach(p => userMap.set(p.id, p.full_name || p.email));
-    }
-    
-    const stats = {};
-    const completedStates = new Set(['Completado', 'Archivado', 'Finalizado', 'Finalizado Parcial', 'Rehusado', 'Datos NO válidos']);
-    
-    (expedientes || []).forEach(exp => {
-      if (!exp.gestor_id) return; // Skip sin asignar
-      
-      const responsable = userMap.get(exp.gestor_id) || 'Desconocido';
-      
-      if (!stats[responsable]) {
-        stats[responsable] = { active: 0, completed: 0 };
-      }
-      
-      if (completedStates.has(exp.estado)) {
-        stats[responsable].completed++;
-      } else {
-        stats[responsable].active++;
-      }
-    });
-    
-    res.json(stats);
+    const { userId } = req.params;
+    const result = await WorkloadService.redistributeDailyTasks(userId);
+    res.json(result);
   } catch (e) {
-    console.error('Error en /api/workload/stats:', e);
+    console.error('Error desactivando usuario:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 3. Reactivar usuario (restaurar tareas)
+app.post('/api/workload/user/:userId/activate', requireAuth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const result = await WorkloadService.restoreUserTasks(userId);
+    res.json(result);
+  } catch (e) {
+    console.error('Error reactivando usuario:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 4. Distribuir tareas a nuevo usuario
+app.post('/api/workload/user/:userId/distribute-initial', requireAuth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { percentage } = req.body;
+    const result = await WorkloadService.distributeToNewUser(userId, percentage);
+    res.json(result);
+  } catch (e) {
+    console.error('Error distribuyendo carga inicial:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 6. Distribuir expedientes importados
+app.post('/api/workload/distribute-import', requireAuth, async (req, res) => {
+  try {
+    const { importLogId, expedienteIds } = req.body;
+    const result = await WorkloadService.distributeImportedExpedientes(importLogId, expedienteIds);
+    res.json(result);
+  } catch (e) {
+    console.error('Error distribuyendo importación:', e);
     res.status(500).json({ error: e.message });
   }
 });
