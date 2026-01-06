@@ -84,10 +84,26 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// Helper para notificaciones de carga (OPTIMIZACIÓN 3)
+async function sendWorkloadNotification(email, count) {
+  if (!email || count <= 0) return;
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"Gescon360" <no-reply@gescon360.es>',
+      to: email,
+      subject: '📋 Nuevas tareas asignadas',
+      html: `<p>Hola,</p><p>Se te han asignado <strong>${count}</strong> nuevas tareas en el sistema Gescon360 debido a una redistribución de carga.</p>`
+    });
+  } catch (e) {
+    console.error(`Error enviando notificación a ${email}:`, e);
+  }
+}
+
 // --- SISTEMA DE CACHÉ EN MEMORIA ---
 const apiCache = {
   stats: { data: null, timestamp: 0, ttl: 60 * 1000 }, // 1 minuto para dashboard
-  charts: { data: null, timestamp: 0, ttl: 5 * 60 * 1000 } // 5 minutos para reportes
+  charts: { data: null, timestamp: 0, ttl: 5 * 60 * 1000 }, // 5 minutos para reportes
+  workload: { data: null, timestamp: 0, ttl: 5 * 60 * 1000 } // OPTIMIZACIÓN 1: Caché Workload
 };
 
 // --- RATE LIMITING (Login) ---
@@ -935,11 +951,22 @@ app.get('/api/workload/distribution', requireAuth, async (req, res) => {
 // 1. Obtener estadísticas de carga (Reemplaza implementación anterior)
 app.get('/api/workload/stats', requireAuth, async (req, res) => {
   try {
+    // OPTIMIZACIÓN 1: Uso de Caché (Redis Futuro)
+    const now = Date.now();
+    if (apiCache.workload.data && (now - apiCache.workload.timestamp < apiCache.workload.ttl)) {
+       return res.json({ success: true, data: apiCache.workload.data });
+    }
+
     const stats = await WorkloadService.getCurrentWorkloadStats();
-    res.json(stats);
-  } catch (e) {
-    console.error('Error en /api/workload/stats:', e);
-    res.status(500).json({ error: e.message });
+    
+    // Actualizar caché
+    apiCache.workload.data = stats;
+    apiCache.workload.timestamp = now;
+    
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('Error en /api/workload/stats:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -969,10 +996,16 @@ app.post('/api/workload/rebalance', requireAuth, async (req, res) => {
   try {
     // Nota: rebalanceWorkload hace un rebalanceo completo
     const result = await WorkloadService.rebalanceWorkload();
-    res.json(result);
-  } catch (e) {
-    console.error('Error rebalanceando:', e);
-    res.status(500).json({ error: e.message });
+    
+    // OPTIMIZACIÓN 3: Notificaciones
+    if (result.notifications) {
+        result.notifications.forEach(n => sendWorkloadNotification(n.email, n.count));
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error rebalanceando:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -992,10 +1025,10 @@ app.post('/api/workload/user/:userId/deactivate', requireAuth, async (req, res) 
   try {
     const { userId } = req.params;
     const result = await WorkloadService.redistributeDailyTasks(userId);
-    res.json(result);
-  } catch (e) {
-    console.error('Error desactivando usuario:', e);
-    res.status(500).json({ error: e.message });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error desactivando usuario:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -1004,10 +1037,10 @@ app.post('/api/workload/user/:userId/activate', requireAuth, async (req, res) =>
   try {
     const { userId } = req.params;
     const result = await WorkloadService.restoreUserTasks(userId);
-    res.json(result);
-  } catch (e) {
-    console.error('Error reactivando usuario:', e);
-    res.status(500).json({ error: e.message });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error reactivando usuario:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -1015,12 +1048,18 @@ app.post('/api/workload/user/:userId/activate', requireAuth, async (req, res) =>
 app.post('/api/workload/user/:userId/distribute-initial', requireAuth, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { percentage } = req.body;
+    const percentage = req.body.percentage || 0.2;
     const result = await WorkloadService.distributeToNewUser(userId, percentage);
-    res.json(result);
-  } catch (e) {
-    console.error('Error distribuyendo carga inicial:', e);
-    res.status(500).json({ error: e.message });
+    
+    // OPTIMIZACIÓN 3: Notificar al nuevo usuario
+    if (result.newUserEmail && result.tasksAssigned > 0) {
+        sendWorkloadNotification(result.newUserEmail, result.tasksAssigned);
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error distribuyendo carga inicial:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -1029,9 +1068,30 @@ app.post('/api/workload/distribute-import', requireAuth, async (req, res) => {
   try {
     const { importLogId, expedienteIds } = req.body;
     const result = await WorkloadService.distributeImportedExpedientes(importLogId, expedienteIds);
-    res.json(result);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error distribuyendo importación:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// OPTIMIZACIÓN 2: Endpoint para Cron Job de Rebalanceo Automático
+app.post('/api/cron/rebalance', async (req, res) => {
+  try {
+    const authHeader = req.headers['x-cron-secret'];
+    if (authHeader !== CRON_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized Cron Request' });
+    }
+
+    const result = await WorkloadService.rebalanceWorkload();
+    
+    if (result.notifications) {
+        result.notifications.forEach(n => sendWorkloadNotification(n.email, n.count));
+    }
+
+    res.json({ success: true, result });
   } catch (e) {
-    console.error('Error distribuyendo importación:', e);
+    console.error('Error en cron rebalance:', e);
     res.status(500).json({ error: e.message });
   }
 });

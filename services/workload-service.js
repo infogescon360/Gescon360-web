@@ -11,6 +11,22 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
   }
 });
 
+/**
+ * Servicio de Gestión de Carga de Trabajo (WorkloadService)
+ * 
+ * Documentación de Uso:
+ * 
+ * import { WorkloadService } from './services/workload-service.js';
+ * 
+ * // 1. Obtener estadísticas
+ * const stats = await WorkloadService.getCurrentWorkloadStats();
+ * 
+ * // 2. Marcar usuario inactivo y redistribuir tareas
+ * const result = await WorkloadService.redistributeDailyTasks(userId);
+ * 
+ * // 3. Distribuir expedientes importados
+ * await WorkloadService.distributeImportedExpedientes(importLogId, expedienteIds);
+ */
 export class WorkloadService {
   
   /**
@@ -207,6 +223,7 @@ export class WorkloadService {
     // PASO 1: Obtener usuarios activos existentes (excluyendo el nuevo)
     const activeUsers = await this.getActiveUsers();
     const existingUsers = activeUsers.filter(u => u.id !== newUserId);
+    const newUser = activeUsers.find(u => u.id === newUserId);
 
     if (existingUsers.length === 0) return { tasksAssigned: 0, fromUsers: [] };
 
@@ -275,7 +292,11 @@ export class WorkloadService {
         });
     }
 
-    return { tasksAssigned: totalMoved, fromUsers: fromUsersSummary };
+    return { 
+      tasksAssigned: totalMoved, 
+      fromUsers: fromUsersSummary,
+      newUserEmail: newUser ? newUser.email : null 
+    };
   }
 
   /**
@@ -497,7 +518,17 @@ export class WorkloadService {
         });
     }
 
-    return { tasksMoved: updates.length, newDistribution: distributionSummary };
+    // Calcular notificaciones (agrupar por usuario destino)
+    const movesByUser = {};
+    updates.forEach(u => {
+        movesByUser[u.new_user_id] = (movesByUser[u.new_user_id] || 0) + 1;
+    });
+    
+    const notifications = activeUsers
+        .filter(u => movesByUser[u.id])
+        .map(u => ({ email: u.email, count: movesByUser[u.id] }));
+
+    return { tasksMoved: updates.length, newDistribution: distributionSummary, notifications };
   }
 
   // Alias para compatibilidad con server.js

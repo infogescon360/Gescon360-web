@@ -28,3 +28,12 @@ services:
     image: curlimages/curl
     schedule: "0 7 * * *" # Ejecutar diariamente a las 07:00 UTC
     command: curl -X POST -H "x-cron-secret: gescon360_cron_secret_key" https://gescon360-web.onrender.com/api/cron/send-workload-report
+
+  # 4. Cron Job para Rebalanceo Automático de Carga (OPTIMIZACIÓN 2)
+  # Rebalancea tareas equitativamente entre usuarios activos
+  - type: cron
+    name: daily-workload-rebalance
+    env: image
+    image: curlimages/curl
+    schedule: "0 2 * * *" # Ejecutar diariamente a las 02:00 UTC
+    command: curl -X POST -H "x-cron-secret: gescon360_cron_secret_key" https://gescon360-web.onrender.com/api/cron/rebalance
