@@ -54,7 +54,7 @@ export class WorkloadService {
   static async getCurrentWorkloadStats() {
     const { data, error } = await supabaseAdmin
       .from('workload_stats')
-      .select('user_id, user_name, tareas_activas, tareas_completadas, importe_total')
+      .select('*')
       .order('tareas_activas', { ascending: true });
     
     if (error) throw error;

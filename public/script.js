@@ -2328,29 +2328,19 @@ async function loadResponsibles() {
     if (container) container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div></div>';
 
     try {
-        const session = await supabaseClient.auth.getSession();
-        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
-
-        const response = await fetch('/api/responsables', {
-            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-        });
-
-        if (!response.ok) throw new Error('Error cargando usuarios');
-        const users = await response.json();
-        usersData = users;
-
-        // OPTIMIZACIÓN: Usar endpoint de estadísticas
-        let stats = {};
-        try {
-            const statsResponse = await fetch('/api/workload/stats', {
-                headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-            });
-            if (statsResponse.ok) stats = await statsResponse.json();
-        } catch (e) {
-            console.warn('No se pudieron cargar las estadísticas de tareas:', e);
+        // Usar WorkloadAPI para obtener estadísticas completas
+        const response = await workloadAPI.getStats();
+        
+        if (response.success) {
+            const stats = response.data;
+            renderResponsiblesTable(stats);
+            
+            // Actualizar timestamp si existe elemento
+            const lastUpdate = document.getElementById('ultima-actualizacion');
+            if (lastUpdate && response.timestamp) {
+                lastUpdate.textContent = new Date(response.timestamp).toLocaleTimeString();
+            }
         }
-
-        renderResponsiblesTable(users, stats);
     } catch (error) {
         console.error('Error loading responsibles:', error);
         showToast('danger', 'Error', error.message);
@@ -2360,7 +2350,7 @@ async function loadResponsibles() {
     }
 }
 
-function renderResponsiblesTable(users, stats = {}) {
+function renderResponsiblesTable(stats) {
     const container = document.getElementById('responsiblesList');
     if (!container) return;
 
@@ -2369,13 +2359,13 @@ function renderResponsiblesTable(users, stats = {}) {
     const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
     container.innerHTML = '';
-    if (users.length === 0) {
+    if (!stats || stats.length === 0) {
         container.innerHTML = '<div class="alert alert-info">No hay responsables registrados.</div>';
         return;
     }
 
     const table = document.createElement('table');
-    table.className = 'table table-hover';
+    table.className = 'table table-hover align-middle';
     table.innerHTML = `
         <thead>
             <tr>
@@ -2384,32 +2374,70 @@ function renderResponsiblesTable(users, stats = {}) {
                 <th>Estado</th>
                 <th>Tareas Activas</th>
                 <th>Completadas</th>
+                <th>Importe Total</th>
+                <th>Acciones</th>
             </tr>
         </thead>
         <tbody></tbody>
     `;
     const tbody = table.querySelector('tbody');
 
-    users.forEach(user => {
-        const name = (user.full_name || user.email).trim();
-        // Buscar estadísticas por nombre o email
-        const userStats = stats[name] || stats[user.email] || { active: 0, completed: 0 };
+    stats.forEach(stat => {
+        const name = stat.user_name || stat.email;
+        const statusLabel = statusMap[stat.status] || stat.status;
+        const statusClass = classMap[stat.status] || 'bg-secondary';
+        const importe = stat.importe_total ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(stat.importe_total) : '€0,00';
         
-        const statusLabel = statusMap[user.status] || user.status;
-        const statusClass = classMap[user.status] || 'bg-secondary';
+        // Determinar acción (Activar/Desactivar)
+        const isInactive = ['inactive', 'vacation', 'sick_leave'].includes(stat.status);
+        const actionBtnClass = isInactive ? 'btn-success' : 'btn-warning';
+        const actionIcon = isInactive ? 'bi-play-fill' : 'bi-pause-fill';
+        const actionText = isInactive ? 'Activar' : 'Inactivar';
+        const actionFn = isInactive ? 'activateUser' : 'deactivateUser';
         
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${name}</td>
-            <td>${user.email}</td>
+            <td>${stat.email}</td>
             <td><span class="badge ${statusClass}">${statusLabel}</span></td>
-            <td>${userStats.active}</td>
-            <td>${userStats.completed}</td>
+            <td>${stat.tareas_activas || 0}</td>
+            <td>${stat.tareas_completadas || 0}</td>
+            <td>${importe}</td>
+            <td>
+                <button onclick="toggleUsuarioEstado('${stat.user_id}', '${actionFn}')" class="btn btn-sm ${actionBtnClass}">
+                    <i class="bi ${actionIcon}"></i> ${actionText}
+                </button>
+            </td>
         `;
         tbody.appendChild(row);
     });
 
     container.appendChild(table);
+}
+
+async function toggleUsuarioEstado(userId, action) {
+    try {
+        showLoading();
+        let response;
+        
+        if (action === 'activateUser') {
+            response = await workloadAPI.activateUser(userId);
+        } else {
+            response = await workloadAPI.deactivateUser(userId);
+        }
+
+        if (response.success) {
+            showToast('success', 'Éxito', response.message);
+            await loadResponsibles(); // Recargar tabla
+        } else {
+            throw new Error(response.error || 'Error desconocido');
+        }
+    } catch (error) {
+        console.error('Error toggling user status:', error);
+        showToast('danger', 'Error', error.message);
+    } finally {
+        hideLoading();
+    }
 }
 
 async function loadUsers() {
@@ -2706,6 +2734,85 @@ async function rebalanceActiveWorkload(isSimulation = false) {
         if (spinner) spinner.classList.add('d-none');
     }
 }
+
+// ==========================================
+// WORKLOAD API CLIENT
+// ==========================================
+
+class WorkloadAPI {
+  constructor(baseURL) {
+    this.baseURL = baseURL || '';
+  }
+
+  // Helper para hacer fetch con manejo de errores y auth
+  async _fetch(url, options = {}) {
+    try {
+      const session = await supabaseClient.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      
+      if (!token) throw new Error('No hay sesión activa');
+
+      const response = await fetch(this.baseURL + url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...options.headers
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error(`Error en ${url}:`, error);
+      throw error;
+    }
+  }
+
+  // ===== MÉTODOS DE API =====
+
+  async getStats() {
+    return this._fetch('/api/workload/stats');
+  }
+
+  async getActiveUsers() {
+    return this._fetch('/api/workload/users/active');
+  }
+
+  async deactivateUser(userId) {
+    return this._fetch(`/api/workload/user/${userId}/deactivate`, { method: 'POST' });
+  }
+
+  async activateUser(userId) {
+    return this._fetch(`/api/workload/user/${userId}/activate`, { method: 'POST' });
+  }
+
+  async distributeToNewUser(userId, percentage = 0.2) {
+    return this._fetch(`/api/workload/user/${userId}/distribute-initial`, {
+      method: 'POST',
+      body: JSON.stringify({ percentage })
+    });
+  }
+
+  async rebalance() {
+    return this._fetch('/api/workload/rebalance', { method: 'POST' });
+  }
+
+  async distributeImport(importLogId, expedienteIds) {
+    return this._fetch('/api/workload/distribute-import', {
+      method: 'POST',
+      body: JSON.stringify({ importLogId, expedienteIds })
+    });
+  }
+}
+
+// Instancia global
+const workloadAPI = new WorkloadAPI();
 
 // OPTIMIZACIÓN 6: CACHÉ FRONTEND
 const workloadCache = {

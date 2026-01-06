@@ -948,6 +948,17 @@ app.get('/api/workload/distribution', requireAuth, async (req, res) => {
   }
 });
 
+// ENDPOINT 2: Obtener usuarios activos
+app.get('/api/workload/users/active', requireAuth, async (req, res) => {
+  try {
+    const users = await WorkloadService.getActiveUsers();
+    res.json({ success: true, data: users });
+  } catch (error) {
+    console.error('Error getting active users:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // 1. Obtener estadísticas de carga (Reemplaza implementación anterior)
 app.get('/api/workload/stats', requireAuth, async (req, res) => {
   try {
@@ -963,7 +974,7 @@ app.get('/api/workload/stats', requireAuth, async (req, res) => {
     apiCache.workload.data = stats;
     apiCache.workload.timestamp = now;
     
-    res.json({ success: true, data: stats });
+    res.json({ success: true, data: stats, timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Error en /api/workload/stats:', error);
     res.status(500).json({ success: false, error: error.message });
