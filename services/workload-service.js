@@ -53,11 +53,13 @@ export class WorkloadService {
    */
   static async getCurrentWorkloadStats() {
     const { data, error } = await supabaseAdmin
-      .from('workload_stats')
-      .select('*')
-      .order('tareas_activas', { ascending: true });
+      .rpc('get_workload_stats');
     
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching workload stats:', error);
+      throw error;
+    }
+    
     return data || [];
   }
 
