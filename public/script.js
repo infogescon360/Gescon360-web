@@ -2674,11 +2674,19 @@ async function rebalanceActiveWorkload(isSimulation = false) {
     }
 
     showLoading();
+    const spinner = document.getElementById('workloadSpinner');
+    if (spinner) spinner.classList.remove('d-none');
+
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('No hay sesión activa');
 
-        const response = await fetch(`/admin/rebalance-workload?mode=${mode}`, {
+        // Usar el nuevo servicio para ejecución real, mantener endpoint admin para simulación
+        const endpoint = isSimulation 
+            ? `/admin/rebalance-workload?mode=${mode}` 
+            : '/api/workload/rebalance';
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
@@ -2694,6 +2702,7 @@ async function rebalanceActiveWorkload(isSimulation = false) {
         showToast('danger', 'Error', error.message);
     } finally {
         hideLoading();
+        if (spinner) spinner.classList.add('d-none');
     }
 }
 
@@ -2703,50 +2712,68 @@ async function loadWorkloadStats() {
     const tableBody = document.getElementById('workloadTable');
     if (!tableBody) return;
 
+    // INYECCIÓN DE BARRA DE HERRAMIENTAS (Si no existe)
+    const table = tableBody.closest('table');
+    const wrapper = table ? (table.closest('.table-responsive') || table.parentElement) : null;
+    
+    if (wrapper && !document.getElementById('workloadToolbar')) {
+        const toolbar = document.createElement('div');
+        toolbar.id = 'workloadToolbar';
+        toolbar.className = 'd-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded border';
+        toolbar.innerHTML = `
+            <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0 text-primary"><i class="bi bi-graph-up"></i> Carga de Trabajo</h5>
+                <small class="text-muted ms-2" id="workloadLastUpdate"></small>
+                <div id="workloadSpinner" class="spinner-border spinner-border-sm text-primary d-none" role="status"></div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-sm btn-outline-primary" onclick="loadWorkloadStats()" title="Refrescar datos">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+                <button class="btn btn-sm btn-success" onclick="distributeWorkloadEquitably()" title="Asignar expedientes sin gestor">
+                    <i class="bi bi-share-fill"></i> Distribuir Pendientes
+                </button>
+                <button class="btn btn-sm btn-warning text-dark" onclick="rebalanceActiveWorkload(true)" title="Simular rebalanceo">
+                    <i class="bi bi-eye"></i> Simular
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="rebalanceActiveWorkload(false)" title="Rebalancear carga activa">
+                    <i class="bi bi-shuffle"></i> Rebalancear
+                </button>
+            </div>
+        `;
+        wrapper.parentNode.insertBefore(toolbar, wrapper);
+    }
+    const updateLabel = document.getElementById('workloadLastUpdate');
+    if (updateLabel) updateLabel.textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
+
     showLoading();
     try {
         const session = await supabaseClient.auth.getSession();
-        if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
+        const token = session?.data?.session?.access_token;
+        if (!token) throw new Error('No hay sesión activa');
 
-        const response = await fetch('/api/responsables', {
-            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-        });
-
-        if (!response.ok) throw new Error('Error cargando usuarios');
-        const users = await response.json();
-
-        const statsResponse = await fetch('/api/workload/stats', {
-            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+        const response = await fetch('/api/workload/distribution', {
+            headers: { 'Authorization': `Bearer ${token}` }
         });
         
-        let workloadStats = {};
-        if (statsResponse.ok) {
-            workloadStats = await statsResponse.json();
-        }
+        if (!response.ok) throw new Error('Error al obtener datos de distribución');
 
-        tableBody.innerHTML = '';
-        users.forEach(user => {
-            const name = (user.full_name || user.email).trim();
-            const stat = workloadStats[name] || workloadStats[user.email] || { active: 0, completed: 0 };
-            
-            const maxLoadReference = 20; 
-            const percent = Math.min(100, (stat.active / maxLoadReference) * 100);
-            
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${name}</td>
-                <td><span class="status-badge status-available">Activo</span></td>
-                <td>${stat.active}</td>
-                <td>${stat.completed}</td>
+        const stats = await response.json();
+        
+        tableBody.innerHTML = stats.map(user => `
+            <tr>
+                <td>${user.full_name || user.email}</td>
+                <td><span class="status-badge status-${user.status === 'active' ? 'available' : 'unavailable'}">${user.status === 'active' ? 'Activo' : user.status}</span></td>
+                <td>${user.tareas_activas || 0}</td>
+                <td>${user.tareas_completadas || 0}</td>
+                <td>${user.expedientes_activos || 0}</td>
                 <td>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-info" role="progressbar" style="width: ${percent}%"></div>
-                    </div>
+                    <span class="badge ${user.tareas_activas > 10 ? 'bg-danger' : 'bg-success'}">
+                        ${user.tareas_activas > 10 ? 'Alta Carga' : 'Disponible'}
+                    </span>
                 </td>
-                <td><span class="badge bg-success">Disponible</span></td>
-            `;
-            tableBody.appendChild(row);
-        });
+            </tr>
+        `).join('');
 
     } catch (error) {
         console.error(error);
@@ -4550,44 +4577,6 @@ function searchTasks() {
 // FASE 3: FUNCIONES DE DISTRIBUCIÓN DE CARGA (WorkloadService)
 // ============================================================================
 
-// Función para cargar estadísticas de distribución (Nueva versión)
-async function loadWorkloadDistribution() {
-  try {
-    const session = await supabaseClient.auth.getSession();
-    const token = session?.data?.session?.access_token;
-    if (!token) return;
-
-    const response = await fetch('/api/workload/distribution', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    const stats = await response.json();
-    
-    // Actualizar tabla de distribución
-    const tbody = document.getElementById('workloadTable');
-    if (!tbody) return;
-
-    tbody.innerHTML = stats.map(user => `
-      <tr>
-        <td>${user.full_name || user.email}</td>
-        <td>${user.status}</td>
-        <td>${user.tareas_activas || 0}</td>
-        <td>${user.tareas_completadas || 0}</td>
-        <td>${user.expedientes_activos || 0}</td>
-        <td>
-          <span class="badge ${user.tareas_activas > 10 ? 'bg-danger' : 'bg-success'}">
-            ${user.tareas_activas > 10 ? 'Alta Carga' : 'Disponible'}
-          </span>
-        </td>
-      </tr>
-    `).join('');
-    
-  } catch (error) {
-    console.error('Error cargando distribución:', error);
-    showToast('danger', 'Error', 'Error al cargar distribución de carga');
-  }
-}
-
 // Función para distribuir equitativamente
 async function distributeWorkloadEquitably() {
   const confirmed = await showConfirmModal('Distribuir Carga', '¿Distribuir equitativamente todas las tareas sin asignar?', 'Distribuir', 'btn-primary');
@@ -4624,7 +4613,7 @@ async function distributeWorkloadEquitably() {
     
     showToast('success', 'Éxito', 'Carga distribuida correctamente');
     // Recargar vistas
-    loadWorkloadDistribution();
+    loadWorkloadStats();
     loadDashboardStats();
 
   } catch (error) {
@@ -4637,4 +4626,4 @@ async function distributeWorkloadEquitably() {
 
 // Exponer funciones globalmente
 window.distributeWorkloadEquitably = distributeWorkloadEquitably;
-window.loadWorkloadDistribution = loadWorkloadDistribution;
+window.loadWorkloadStats = loadWorkloadStats;

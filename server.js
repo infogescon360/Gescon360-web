@@ -1272,7 +1272,13 @@ app.get('/api/expedientes', requireAuth, async (req, res) => {
     const seleccion = campos || '*';
     let query = supabase.from('expedientes').select(seleccion, { count: 'exact' });
     
-    if (gestor_id) query = query.eq('gestor_id', gestor_id);
+    if (gestor_id) {
+      if (gestor_id === 'null') {
+        query = query.is('gestor_id', null);
+      } else {
+        query = query.eq('gestor_id', gestor_id);
+      }
+    }
     if (estado) {
       if (typeof estado === 'string' && estado.includes(',')) {
         query = query.in('estado', estado.split(',').map(e => e.trim()));
