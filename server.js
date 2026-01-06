@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import crypto from 'crypto'; // Necesario para hash de historial
 import nodemailer from 'nodemailer';
+import { WorkloadService } from './workload-service.js';
 
 const app = express();
 
@@ -49,7 +50,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   db: { schema: 'public' }
 });
 
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+export const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
@@ -902,6 +903,63 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('Error en /api/reports/charts:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- NUEVOS ENDPOINTS DE DISTRIBUCIÓN (WorkloadService) ---
+
+// Endpoint: Obtener estadísticas de carga
+app.get('/api/workload/distribution', requireAuth, async (req, res) => {
+  try {
+    const stats = await WorkloadService.getCurrentWorkload();
+    res.json(stats);
+  } catch (e) {
+    console.error('Error en /api/workload/distribution:', e);
+    // Fallback si la tabla workload_stats no existe
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Distribuir carga equitativamente
+app.post('/api/workload/distribute-equitably', requireAuth, async (req, res) => {
+  try {
+    const { expedienteIds } = req.body;
+    
+    if (!expedienteIds || !Array.isArray(expedienteIds)) {
+      return res.status(400).json({ error: 'Se requiere array de expedienteIds' });
+    }
+
+    const result = await WorkloadService.distributeWorkloadEquitably(
+      expedienteIds, 
+      req.user.id
+    );
+    
+    res.json({ success: true, assignments: result });
+  } catch (e) {
+    console.error('Error distribuyendo carga:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Rebalancear carga activa
+app.post('/api/workload/rebalance', requireAuth, async (req, res) => {
+  try {
+    const result = await WorkloadService.rebalanceActiveWorkload(req.user.id);
+    res.json(result);
+  } catch (e) {
+    console.error('Error rebalanceando:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Redistribuir usuarios no disponibles
+app.post('/api/workload/redistribute-unavailable', requireAuth, async (req, res) => {
+  try {
+    const result = await WorkloadService.redistributeUnavailableUsers(req.user.id);
+    res.json(result);
+  } catch (e) {
+    console.error('Error redistribuyendo:', e);
     res.status(500).json({ error: e.message });
   }
 });

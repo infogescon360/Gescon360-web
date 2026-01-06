@@ -4545,3 +4545,96 @@ function searchTasks() {
     currentTaskPage = 1;
     loadTasks();
 }
+
+// ============================================================================
+// FASE 3: FUNCIONES DE DISTRIBUCIÓN DE CARGA (WorkloadService)
+// ============================================================================
+
+// Función para cargar estadísticas de distribución (Nueva versión)
+async function loadWorkloadDistribution() {
+  try {
+    const session = await supabaseClient.auth.getSession();
+    const token = session?.data?.session?.access_token;
+    if (!token) return;
+
+    const response = await fetch('/api/workload/distribution', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    const stats = await response.json();
+    
+    // Actualizar tabla de distribución
+    const tbody = document.getElementById('workloadTable');
+    if (!tbody) return;
+
+    tbody.innerHTML = stats.map(user => `
+      <tr>
+        <td>${user.full_name || user.email}</td>
+        <td>${user.status}</td>
+        <td>${user.tareas_activas || 0}</td>
+        <td>${user.tareas_completadas || 0}</td>
+        <td>${user.expedientes_activos || 0}</td>
+        <td>
+          <span class="badge ${user.tareas_activas > 10 ? 'bg-danger' : 'bg-success'}">
+            ${user.tareas_activas > 10 ? 'Alta Carga' : 'Disponible'}
+          </span>
+        </td>
+      </tr>
+    `).join('');
+    
+  } catch (error) {
+    console.error('Error cargando distribución:', error);
+    showToast('danger', 'Error', 'Error al cargar distribución de carga');
+  }
+}
+
+// Función para distribuir equitativamente
+async function distributeWorkloadEquitably() {
+  const confirmed = await showConfirmModal('Distribuir Carga', '¿Distribuir equitativamente todas las tareas sin asignar?', 'Distribuir', 'btn-primary');
+  if (!confirmed) return;
+  
+  showLoading();
+  try {
+    const session = await supabaseClient.auth.getSession();
+    const token = session?.data?.session?.access_token;
+
+    // Obtener expedientes sin asignar
+    const response = await fetch('/api/expedientes?gestor_id=null', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const { data } = await response.json();
+    
+    if (!data || data.length === 0) {
+      showToast('info', 'Info', 'No hay expedientes sin asignar');
+      return;
+    }
+    
+    const expedienteIds = data.map(e => e.id);
+    
+    const distResponse = await fetch('/api/workload/distribute-equitably', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ expedienteIds })
+    });
+
+    if (!distResponse.ok) throw new Error('Error en la distribución');
+    
+    showToast('success', 'Éxito', 'Carga distribuida correctamente');
+    // Recargar vistas
+    loadWorkloadDistribution();
+    loadDashboardStats();
+
+  } catch (error) {
+    console.error('Error distribuyendo:', error);
+    showToast('danger', 'Error', error.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Exponer funciones globalmente
+window.distributeWorkloadEquitably = distributeWorkloadEquitably;
+window.loadWorkloadDistribution = loadWorkloadDistribution;
