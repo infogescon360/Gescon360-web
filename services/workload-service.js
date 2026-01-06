@@ -51,6 +51,10 @@ export class WorkloadService {
    * Retorna: Array de seguimientos que necesitan revisión diaria
    */
   static async getDailyReviewTasks(userId) {
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('Invalid user ID');
+    }
+
     const today = new Date().toISOString().split('T')[0];
 
     // 1. Obtener asignaciones activas del usuario (workload_assignments)
@@ -94,81 +98,17 @@ export class WorkloadService {
    * Retorna: Objeto con resumen {tasksMoved: X, toUsers: [...]}
    */
   static async redistributeDailyTasks(inactiveUserId) {
-    // PASO 1: Obtener tareas diarias del usuario inactivo
-    const dailyTasks = await this.getDailyReviewTasks(inactiveUserId);
+    if (!inactiveUserId || typeof inactiveUserId !== 'string') {
+      throw new Error('Invalid user ID');
+    }
+
+    // OPTIMIZACIÓN 3: Transacciones para Integridad (RPC)
+    const { data, error } = await supabaseAdmin.rpc('redistribute_with_transaction', {
+      user_id: inactiveUserId
+    });
     
-    if (!dailyTasks || dailyTasks.length === 0) {
-      return { tasksMoved: 0, toUsers: [] };
-    }
-
-    // PASO 2: Obtener usuarios activos (excluyendo el inactivo)
-    const activeUsers = await this.getActiveUsers();
-    const filteredUsers = activeUsers.filter(u => u.id !== inactiveUserId);
-
-    if (filteredUsers.length === 0) {
-      throw new Error('No hay usuarios activos disponibles para redistribuir');
-    }
-
-    // PASO 3: Distribuir equitativamente usando Round-Robin
-    const updates = [];
-    const userIdsReceiving = new Set();
-
-    for (let i = 0; i < dailyTasks.length; i++) {
-      const task = dailyTasks[i];
-      const targetUser = filteredUsers[i % filteredUsers.length];
-      
-      userIdsReceiving.add(targetUser.email);
-
-      if (task.assignment_id) {
-        // Actualizar asignación en workload_assignments
-        updates.push(
-          supabaseAdmin
-            .from('workload_assignments')
-            .update({
-              user_id: targetUser.id,
-              assigned_by: null, // SYSTEM (null si no hay ID de sistema)
-              assignment_type: 'rebalanceo_inactividad'
-            })
-            .eq('id', task.assignment_id)
-        );
-
-        // IMPORTANTE: Sincronizar también el expediente para mantener consistencia
-        updates.push(
-            supabaseAdmin
-                .from('expedientes')
-                .update({ gestor_id: targetUser.id })
-                .eq('id', task.expediente_id)
-        );
-      }
-    }
-
-    await Promise.all(updates);
-
-    // PASO 4: Marcar usuario como inactivo (Usando 'status' según esquema actual)
-    await supabaseAdmin
-      .from('profiles')
-      .update({ status: 'inactive' }) 
-      .eq('id', inactiveUserId);
-
-    // PASO 5: Registrar en log de auditoría (Si la tabla existe)
-    const { error: logError } = await supabaseAdmin
-      .from('workload_history')
-      .insert({
-        user_id: inactiveUserId,
-        action: 'redistribucion_inactividad',
-        details: { 
-            tareas_redistribuidas: dailyTasks.length,
-            assignment_ids: dailyTasks.map(t => t.assignment_id).filter(id => id) // Guardar IDs para restauración
-        },
-        created_at: new Date().toISOString()
-      });
-      
-    if (logError) console.warn('Aviso: No se pudo registrar en workload_history', logError.message);
-
-    return { 
-      tasksMoved: dailyTasks.length, 
-      toUsers: Array.from(userIdsReceiving) 
-    };
+    if (error) throw error;
+    return data;
   }
 
   /**
@@ -177,6 +117,10 @@ export class WorkloadService {
    * Retorna: Objeto con resumen {tasksRestored: X}
    */
   static async restoreUserTasks(userId) {
+    if (!userId || typeof userId !== 'string') {
+      throw new Error('Invalid user ID');
+    }
+
     // PASO 1: Buscar en workload_history las tareas que fueron redistribuidas
     const { data: history, error: historyError } = await supabaseAdmin
       .from('workload_history')
@@ -256,6 +200,10 @@ export class WorkloadService {
    * Retorna: Objeto con resumen {tasksAssigned: X, fromUsers: [...]}
    */
   static async distributeToNewUser(newUserId, redistributionPercentage = 0.2) {
+    if (!newUserId || typeof newUserId !== 'string') {
+      throw new Error('Invalid user ID');
+    }
+
     // PASO 1: Obtener usuarios activos existentes (excluyendo el nuevo)
     const activeUsers = await this.getActiveUsers();
     const existingUsers = activeUsers.filter(u => u.id !== newUserId);

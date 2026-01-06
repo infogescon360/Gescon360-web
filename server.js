@@ -909,6 +909,17 @@ app.get('/api/reports/charts', requireAuth, async (req, res) => {
 
 // --- NUEVOS ENDPOINTS DE DISTRIBUCIÓN (WorkloadService) ---
 
+// OPTIMIZACIÓN 4: Cache de Estadísticas (Refresh manual)
+app.post('/api/workload/refresh-stats', requireAuth, async (req, res) => {
+  try {
+    await supabaseAdmin.rpc('refresh_workload_stats');
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Error refrescando stats:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Endpoint: Obtener distribución (Alias)
 app.get('/api/workload/distribution', requireAuth, async (req, res) => {
   try {
