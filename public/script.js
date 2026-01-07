@@ -1492,6 +1492,8 @@ async function addNewTask() {
                     });
                     if (response.ok) {
                         usersData = await response.json();
+                        const result = await response.json();
+                        usersData = Array.isArray(result) ? result : (result.data || []);
                     }
                 }
             } catch (e) {
@@ -1871,6 +1873,8 @@ async function editTask(id) {
                   });
                   if (response.ok) {
                       usersData = await response.json();
+                      const result = await response.json();
+                      usersData = Array.isArray(result) ? result : (result.data || []);
                   }
               }
           } catch (e) {
@@ -1918,6 +1922,8 @@ async function filterTasks() {
                     });
                     if (response.ok) {
                         usersData = await response.json();
+                        const result = await response.json();
+                        usersData = Array.isArray(result) ? result : (result.data || []);
                     }
                 }
             } catch (e) {
@@ -2331,8 +2337,8 @@ async function loadResponsibles() {
         // Usar WorkloadAPI para obtener estadísticas completas
         const result = await workloadAPI.getStats();
         
-        // FIX: Extraer el array correcto
-        const stats = Array.isArray(result) ? result : (result.data || []);
+        // FIX: Extraer el array correcto - Validación robusta
+        const stats = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
         
         renderResponsiblesTable(stats);
         
@@ -2359,7 +2365,9 @@ function renderResponsiblesTable(stats) {
     const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
     container.innerHTML = '';
-    if (!stats || stats.length === 0) {
+
+    // FIX: Validación más robusta
+    if (!Array.isArray(stats) || stats.length === 0) {
         container.innerHTML = '<div class="alert alert-info">No hay responsables registrados.</div>';
         return;
     }
@@ -2383,6 +2391,9 @@ function renderResponsiblesTable(stats) {
     const tbody = table.querySelector('tbody');
 
     stats.forEach(stat => {
+        // Validación adicional por si algún elemento no es válido
+        if (!stat || typeof stat !== 'object') return;
+        
         const name = stat.user_name || stat.email;
         const statusLabel = statusMap[stat.status] || stat.status;
         const statusClass = classMap[stat.status] || 'bg-secondary';
@@ -2457,6 +2468,8 @@ async function loadUsers() {
 
         if (!response.ok) throw new Error('Error cargando usuarios');
         const users = await response.json();
+        const result = await response.json();
+        const users = Array.isArray(result) ? result : (result.data || []);
         usersData = users;
 
         renderUsersTable(users);
@@ -4124,6 +4137,8 @@ async function loadDashboardStats() {
         if (!response.ok) throw new Error('Error fetching stats');
         
         const stats = await response.json();
+        const result = await response.json();
+        const stats = result.data || result;
         
         // Update dashboard cards
         const cards = document.querySelectorAll('#dashboard .card h2');
@@ -4167,6 +4182,8 @@ async function loadReports() {
             throw new Error(errorData.error || 'Error al cargar datos de reportes');
         }
         const chartData = await response.json();
+        const result = await response.json();
+        const chartData = result.data || result;
 
         renderMonthlyChart(chartData.monthly);
         renderStatusChart(chartData.status);
@@ -4276,6 +4293,8 @@ async function enviarResumenTareasPorGestor() {
                 });
                 if (response.ok) {
                     const users = await response.json();
+                    const result = await response.json();
+                    const users = Array.isArray(result) ? result : (result.data || []);
                     users.forEach(u => {
                         if (u.full_name) userEmailMap.set(u.full_name, u.email);
                         userEmailMap.set(u.email, u.email);
