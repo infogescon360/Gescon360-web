@@ -1491,7 +1491,6 @@ async function addNewTask() {
                         headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
                     });
                     if (response.ok) {
-                        usersData = await response.json();
                         const result = await response.json();
                         usersData = Array.isArray(result) ? result : (result.data || []);
                     }
@@ -1646,9 +1645,10 @@ async function loadTasks() {
     
     try {
         // 1. Consultar TAREAS (Sin JOIN para evitar error de FK inexistente)
+        // OPTIMIZACIÓN: Seleccionar solo columnas necesarias para reducir transferencia de datos
         let query = supabaseClient
             .from('tareas')
-            .select('*', { count: 'exact' });
+            .select('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado', { count: 'exact' });
         
         // FILTRO POR ROL (Usuario solo ve sus tareas, Admin ve todo)
         if (currentUser && !currentUser.isAdmin) {
@@ -1872,7 +1872,6 @@ async function editTask(id) {
                       headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
                   });
                   if (response.ok) {
-                      usersData = await response.json();
                       const result = await response.json();
                       usersData = Array.isArray(result) ? result : (result.data || []);
                   }
@@ -1921,7 +1920,6 @@ async function filterTasks() {
                         headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
                     });
                     if (response.ok) {
-                        usersData = await response.json();
                         const result = await response.json();
                         usersData = Array.isArray(result) ? result : (result.data || []);
                     }
@@ -2467,9 +2465,9 @@ async function loadUsers() {
         });
 
         if (!response.ok) throw new Error('Error cargando usuarios');
-        const users = await response.json();
         const result = await response.json();
-        const users = Array.isArray(result) ? result : (result.data || []);
+        // FIX: Validación robusta y evitar duplicados
+        const users = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
         usersData = users;
 
         renderUsersTable(users);
@@ -2887,9 +2885,11 @@ async function loadWorkloadStats() {
 
         // Usar el API helper que ya gestiona la autenticación
         const result = await workloadAPI.getStats();
+        console.log('Result from API:', result); // Para debugging
 
-        // FIX: Extraer el array correcto
-        const stats = Array.isArray(result) ? result : (result.data || []);
+        // FIX: Extraer el array correcto - Validación robusta
+        const stats = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
+        console.log('Processed stats:', stats); // Para debugging
         
         // Actualizar caché
         workloadCache.data = stats;
@@ -2906,6 +2906,11 @@ async function loadWorkloadStats() {
 }
 
 function renderWorkloadTable(stats, tableBody) {
+    if (!Array.isArray(stats) || stats.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay datos de carga de trabajo disponibles.</td></tr>';
+        return;
+    }
+
     tableBody.innerHTML = stats.map(user => `
         <tr>
             <td>${user.user_name || user.email}</td>
@@ -3098,7 +3103,28 @@ async function exportReport() {
             }));
 
         // 4. Generar Excel con SheetJS
-        const worksheet = XLSX.utils.json_to_sheet(reportData);
+        // Obtener configuración para el nombre de la empresa
+        const config = JSON.parse(localStorage.getItem('gescon360_generalConfig')) || {};
+        const companyName = config.companyName || 'GESCON 360';
+
+        // Crear hoja dejando espacio para la cabecera (empezar en fila 4)
+        const worksheet = XLSX.utils.json_to_sheet(reportData, { origin: 'A4' });
+
+        // Añadir cabecera con nombre de empresa y título
+        XLSX.utils.sheet_add_aoa(worksheet, [
+            [companyName],
+            ['Reporte Mensual de Productividad'],
+            [`Generado: ${new Date().toLocaleDateString()}`]
+        ], { origin: 'A1' });
+
+        // Fusionar celdas para los títulos
+        if (!worksheet['!merges']) worksheet['!merges'] = [];
+        worksheet['!merges'].push(
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, // Empresa
+            { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }, // Título
+            { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } }  // Fecha
+        );
+
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Mensual");
 
@@ -3535,7 +3561,7 @@ async function loadImportLogs() {
     try {
         let query = supabaseClient
             .from('import_logs')
-            .select('*')
+            .select('id, created_at, file_name, total_records, status, duplicates_count, distribution_details')
             .order('created_at', { ascending: false });
 
         if (dateValue) {
@@ -3621,7 +3647,17 @@ async function exportImportLogsToExcel() {
             'Duplicados': log.duplicates_count || 0
         }));
 
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        // Obtener configuración para el nombre de la empresa
+        const config = JSON.parse(localStorage.getItem('gescon360_generalConfig')) || {};
+        const companyName = config.companyName || 'GESCON 360';
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData, { origin: 'A4' });
+        XLSX.utils.sheet_add_aoa(worksheet, [
+            [companyName],
+            ['Historial de Importaciones'],
+            [`Generado: ${new Date().toLocaleDateString()}`]
+        ], { origin: 'A1' });
+
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Historial Importaciones");
 
@@ -4136,18 +4172,19 @@ async function loadDashboardStats() {
 
         if (!response.ok) throw new Error('Error fetching stats');
         
-        const stats = await response.json();
         const result = await response.json();
-        const stats = result.data || result;
+        const stats = result.data || result || {};
         
-        // Update dashboard cards
-        const cards = document.querySelectorAll('#dashboard .card h2');
-        if (cards.length >= 4) {
-            cards[0].textContent = stats.total;
-            cards[1].textContent = stats.pendientes;
-            cards[2].textContent = stats.enProceso;
-            cards[3].textContent = stats.vencimientoHoy;
-        }
+        // Update dashboard cards using IDs
+        const updateStat = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = (value !== undefined && value !== null) ? value : 0;
+        };
+
+        updateStat('totalExpedients', stats.total);
+        updateStat('pendingExpedients', stats.pendientes);
+        updateStat('processExpedients', stats.enProceso);
+        updateStat('dueTodayExpedients', stats.vencimientoHoy);
         
         console.log('Dashboard stats loaded:', stats);
     } catch (error) {
@@ -4696,7 +4733,17 @@ async function exportTasksToExcel() {
         }));
 
         // Generar Excel
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        // Obtener configuración para el nombre de la empresa
+        const config = JSON.parse(localStorage.getItem('gescon360_generalConfig')) || {};
+        const companyName = config.companyName || 'GESCON 360';
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData, { origin: 'A4' });
+        XLSX.utils.sheet_add_aoa(worksheet, [
+            [companyName],
+            ['Listado de Tareas'],
+            [`Generado: ${new Date().toLocaleDateString()}`]
+        ], { origin: 'A1' });
+
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Tareas");
 
@@ -4731,12 +4778,18 @@ async function distributeWorkloadEquitably() {
   try {
     const session = await supabaseClient.auth.getSession();
     const token = session?.data?.session?.access_token;
+    
+    if (!token) throw new Error('No hay sesión activa');
 
     // Obtener expedientes sin asignar
     const response = await fetch('/api/expedientes?gestor_id=null', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    const { data } = await response.json();
+    
+    if (!response.ok) throw new Error('Error al obtener expedientes pendientes');
+
+    const result = await response.json();
+    const data = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
     
     if (!data || data.length === 0) {
       showToast('info', 'Info', 'No hay expedientes sin asignar');
@@ -4754,9 +4807,13 @@ async function distributeWorkloadEquitably() {
       body: JSON.stringify({ expedienteIds })
     });
 
-    if (!distResponse.ok) throw new Error('Error en la distribución');
+    if (!distResponse.ok) {
+        const err = await distResponse.json().catch(() => ({}));
+        throw new Error(err.error || 'Error en la distribución');
+    }
     
-    showToast('success', 'Éxito', 'Carga distribuida correctamente');
+    const distResult = await distResponse.json();
+    showToast('success', 'Éxito', distResult.message || 'Carga distribuida correctamente');
     // Recargar vistas
     loadWorkloadStats();
     loadDashboardStats();

@@ -140,6 +140,40 @@ body {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
+.auth-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+/* Logo en pantalla de autenticación */
+.auth-logo {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    margin-bottom: 1rem;
+}
+
+/* Logo en el sidebar */
+.sidebar-logo {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    padding: 1.5rem 1rem;
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
 .sidebar {
     position: fixed;
     top: 0;
