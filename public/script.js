@@ -3420,9 +3420,131 @@ function saveConfig() {
     showToast('success', 'Guardado', 'Configuración general guardada correctamente.');
 }
 
-function previewImport() {
+async function previewImport() {
     console.log('Función previewImport llamada');
-    showToast('info', 'En desarrollo', 'La vista previa de importación estará disponible próximamente.');
+    
+    const importFile = document.getElementById('importFile');
+    if (!importFile || !importFile.files || importFile.files.length === 0) {
+        showToast('warning', 'Sin archivo', 'Por favor selecciona un archivo para previsualizar.');
+        return;
+    }
+
+    const file = importFile.files[0];
+    showLoading();
+
+    try {
+        // Reutilizamos la función de parseo existente
+        const data = await parsearArchivoImportacion(file, file.name);
+        
+        if (!data || data.length === 0) {
+            showToast('warning', 'Archivo vacío', 'No se encontraron datos válidos en el archivo.');
+            return;
+        }
+
+        showPreviewModal(data);
+
+    } catch (error) {
+        console.error('Error en vista previa:', error);
+        showToast('danger', 'Error', 'No se pudo leer el archivo: ' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+function getOrCreatePreviewModal() {
+    let modalEl = document.getElementById('previewModal');
+    if (!modalEl) {
+        const modalHtml = `
+        <div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-file-earmark-spreadsheet"></i> Vista Previa de Importación</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover mb-0 table-sm" style="font-size: 0.9rem;">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Nº Siniestro</th>
+                                        <th>Nº Póliza</th>
+                                        <th>Asegurado</th>
+                                        <th>Importe</th>
+                                        <th>Fecha Ocurrencia</th>
+                                        <th>Cía. Origen</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="previewTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer justify-content-between">
+                        <div class="text-muted small" id="previewCount"></div>
+                        <div>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                            <button type="button" class="btn btn-primary" id="btnConfirmImport">
+                                <i class="bi bi-upload"></i> Importar Ahora
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('previewModal');
+    }
+    return modalEl;
+}
+
+function showPreviewModal(data) {
+    const modalEl = getOrCreatePreviewModal();
+    const tbody = document.getElementById('previewTableBody');
+    const countSpan = document.getElementById('previewCount');
+    const btnConfirm = document.getElementById('btnConfirmImport');
+    
+    tbody.innerHTML = '';
+    countSpan.textContent = `Mostrando primeros 50 de ${data.length} registros detectados.`;
+
+    // Limitar vista previa a 50 registros para rendimiento
+    const previewData = data.slice(0, 50);
+
+    previewData.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        const importe = row.importe ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(row.importe) : '-';
+        
+        tr.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${row.num_siniestro || '<span class="text-danger">Falta</span>'}</td>
+            <td>${row.num_poliza || '-'}</td>
+            <td>${row.nombre_asegurado || '-'}</td>
+            <td>${importe}</td>
+            <td>${row.fecha_ocurrencia || '-'}</td>
+            <td>${row.cia_origen || '-'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (data.length > 50) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="7" class="text-center text-muted fst-italic">... y ${data.length - 50} registros más ...</td>`;
+        tbody.appendChild(tr);
+    }
+
+    // Configurar botón de confirmar
+    // Clonar para eliminar listeners previos
+    const newBtn = btnConfirm.cloneNode(true);
+    btnConfirm.parentNode.replaceChild(newBtn, btnConfirm);
+    
+    newBtn.onclick = () => {
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+        importarExpedientes(); // Llamar a la función principal
+    };
+
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
 }
 
 async function importarExpedientes() {
@@ -3970,6 +4092,12 @@ function normalizarExpediente(row, fileName, index) {
         if (val instanceof Date) {
             return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
         }
+
+        // Manejar fechas numéricas de Excel (Serial Date)
+        if (typeof val === 'number') {
+            const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+            return isNaN(date.getTime()) ? null : date.toISOString().split('T')[0];
+        }
         
         // Intentar parsear string
         const strVal = String(val).trim();
@@ -4024,6 +4152,9 @@ function normalizarExpediente(row, fileName, index) {
 
 // Función para insertar expedientes en Supabase
 async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {}, fileBase64 = null) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutos timeout para archivos grandes
+
     try {
         const session = await supabaseClient.auth.getSession();
         if (!session?.data?.session?.access_token) throw new Error('No hay sesión activa');
@@ -4037,12 +4168,15 @@ async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${session.data.session.access_token}`
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal
         });
 
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Error en el servidor al importar');
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || `Error del servidor (${response.status})`);
         }
 
         const resultados = await response.json();
@@ -4053,6 +4187,13 @@ async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {
             tareasCreadas: resultados.tareasCreadas || 0
         };
     } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error('Tiempo de espera agotado. El archivo tarda demasiado en subir, verifica tu conexión.');
+        }
+        if (error.message === 'Failed to fetch') {
+            throw new Error('Error de conexión. No se pudo contactar con el servidor.');
+        }
         throw new Error('Error al importar expedientes: ' + error.message);
     }
 }
@@ -4084,8 +4225,24 @@ function getOrCreateDetailsModal() {
 }
 
 function openDatePicker(element, id) {
-    console.log('Función openDatePicker llamada para:', id);
-    showToast('info', 'En desarrollo', 'El selector de fecha estará disponible próximamente.');
+    const dateInput = document.getElementById(id);
+    if (dateInput) {
+        // Usar API moderna si está disponible (Chrome 99+, Firefox 101+, Safari 16+)
+        if (typeof dateInput.showPicker === 'function') {
+            try {
+                dateInput.showPicker();
+            } catch (e) {
+                // Fallback si falla (ej: no disparado por interacción de usuario directa)
+                dateInput.focus();
+            }
+        } else {
+            // Fallback para navegadores antiguos
+            dateInput.focus();
+            dateInput.click();
+        }
+    } else {
+        console.warn('Elemento de fecha no encontrado:', id);
+    }
 }
 
 // ============================================================================
@@ -4218,12 +4375,13 @@ async function loadReports() {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.error || 'Error al cargar datos de reportes');
         }
-        const chartData = await response.json();
         const result = await response.json();
         const chartData = result.data || result;
 
-        renderMonthlyChart(chartData.monthly);
-        renderStatusChart(chartData.status);
+        if (chartData) {
+            renderMonthlyChart(chartData.monthly);
+            renderStatusChart(chartData.status);
+        }
     } catch (error) {
         console.error('Error loading reports:', error);
         showToast('danger', 'Error', 'No se pudieron cargar los gráficos: ' + error.message);
@@ -4329,7 +4487,6 @@ async function enviarResumenTareasPorGestor() {
                     headers: { 'Authorization': `Bearer ${session.access_token}` }
                 });
                 if (response.ok) {
-                    const users = await response.json();
                     const result = await response.json();
                     const users = Array.isArray(result) ? result : (result.data || []);
                     users.forEach(u => {

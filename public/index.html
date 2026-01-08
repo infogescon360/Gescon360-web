@@ -48,7 +48,6 @@
         <div class="auth-card">
             <div class="auth-header">
                 <img src="logo.png" alt="Logo Gescon360" class="auth-logo">
-                <h2>GESCON 360</h2>
                 <p class="text-muted">Sistema de Gestión de Expedientes</p>
             </div>
 
@@ -111,7 +110,6 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <img src="logo.png" alt="Logo Gescon360" class="sidebar-logo">
-                <h3>GESCON 360</h3>
             </div>
             <ul class="sidebar-menu">
                 <li><a href="#" class="active" onclick="showSection('dashboard')"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
@@ -143,7 +141,6 @@
                 <div class="logo-link">
                     <!-- RUTA CORREGIDA DEL LOGO -->
                     <img src="logo.png" alt="Logo Gescon360" class="logo-img">
-                    <span class="logo-text">GESCON 360</span>
                 </div>
                 <h1 class="page-title" id="pageTitle">Dashboard</h1>
                 <div class="user-info">
@@ -384,6 +381,9 @@
                     </div>
 
                     <div class="modal-footer">
+                        <button class="btn-custom btn-outline-custom me-2" onclick="previewImport()">
+                            <i class="bi bi-eye"></i> Vista Previa
+                        </button>
                         <button class="btn-custom btn-primary-custom" onclick="importarExpedientes()">
                             <i class="bi bi-upload"></i> Importar Expedientes
                         </button>
