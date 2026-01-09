@@ -2337,44 +2337,30 @@ let responsiblesData = [
 async function loadResponsibles() {
   console.log('Cargando responsables...');
   showLoading();
-  try {
-    // TODO: aquí iría la llamada real, por ejemplo:
-    // const { data, error } = await supabaseClient.from('responsables').select('*');
-    // if (error) throw error;
-    // responsiblesData = mapResponsiblesFromDb(data);
-    console.log('Cargando responsables...');
-    showLoading();
-    const container = document.getElementById('responsiblesList');
-    if (container) container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div></div>';
+  const container = document.getElementById('responsiblesList');
+  if (container) container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div></div>';
 
-    renderResponsibles(responsiblesData);
+  try {
+    // Usar WorkloadAPI para obtener estadísticas completas
+    const result = await workloadAPI.getStats();
+    
+    // FIX: Extraer el array correcto - Validación robusta
+    const stats = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
+    
+    renderResponsiblesTable(stats);
+    
+    // Actualizar timestamp si existe elemento
+    const lastUpdate = document.getElementById('ultima-actualizacion');
+    if (lastUpdate && !Array.isArray(result) && result.timestamp) {
+        lastUpdate.textContent = new Date(result.timestamp).toLocaleTimeString();
+    }
   } catch (error) {
-    console.error('Error cargando responsables:', error);
-    showToast('danger', 'Error', 'No se pudieron cargar los responsables.');
+    console.error('Error loading responsibles:', error);
+    showToast('danger', 'Error', error.message);
+    if (container) container.innerHTML = '<div class="alert alert-danger">Error al cargar responsables</div>';
   } finally {
     hideLoading();
   }
-    try {
-        // Usar WorkloadAPI para obtener estadísticas completas
-        const result = await workloadAPI.getStats();
-        
-        // FIX: Extraer el array correcto - Validación robusta
-        const stats = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
-        
-        renderResponsiblesTable(stats);
-        
-        // Actualizar timestamp si existe elemento
-        const lastUpdate = document.getElementById('ultima-actualizacion');
-        if (lastUpdate && !Array.isArray(result) && result.timestamp) {
-            lastUpdate.textContent = new Date(result.timestamp).toLocaleTimeString();
-        }
-    } catch (error) {
-        console.error('Error loading responsibles:', error);
-        showToast('danger', 'Error', error.message);
-        if (container) container.innerHTML = '<div class="alert alert-danger">Error al cargar responsables</div>';
-    } finally {
-        hideLoading();
-    }
 }
 
 // Pinta la tabla de responsables en la UI
