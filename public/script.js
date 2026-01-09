@@ -1525,7 +1525,8 @@ async function saveTask() {
         descripcion: document.getElementById('taskDescription').value,
         prioridad: document.getElementById('taskPriority').value,
         fecha_limite: document.getElementById('taskDueDate').value,
-        estado: document.getElementById('taskStatus').value
+        estado: document.getElementById('taskStatus').value,
+        importe_recobrado: parseFloat(document.getElementById('taskRecobrado')?.value || 0)
     };
 
     if (!sgrInput || !taskData.descripcion || !taskData.fecha_limite) {
@@ -1829,6 +1830,8 @@ async function editTask(id) {
         document.getElementById('taskDescription').value = task.descripcion || '';
         document.getElementById('taskPriority').value = task.prioridad || 'Media';
         document.getElementById('taskStatus').value = task.estado || 'Pendiente';
+        const recobradoInput = document.getElementById('taskRecobrado');
+        if (recobradoInput) recobradoInput.value = task.importe_recobrado || '';
         
         if (task.fecha_limite) {
             document.getElementById('taskDueDate').value = task.fecha_limite.split('T')[0];
