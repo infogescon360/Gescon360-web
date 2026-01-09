@@ -147,8 +147,8 @@ body {
 
 /* Logo en pantalla de autenticación */
 .auth-logo {
-    width: 60px;
-    height: 60px;
+    width: 150px;
+    height: 150px;
     object-fit: contain;
     margin-bottom: 1rem;
 }
