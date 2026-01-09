@@ -1809,20 +1809,96 @@ async function loadTasks() {
 }
 
 async function editTask(id) {
-  
-      respSelect.value = task.responsable || '';
+    console.log('Editar tarea:', id);
+    showLoading();
+
+    try {
+        const { data: task, error } = await supabaseClient
+            .from('tareas')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+
+        // Reset form
+        const form = document.getElementById('taskForm');
+        if (form) form.reset();
+
+        document.getElementById('taskId').value = task.id;
+        document.getElementById('taskDescription').value = task.descripcion || '';
+        document.getElementById('taskPriority').value = task.prioridad || 'Media';
+        document.getElementById('taskStatus').value = task.estado || 'Pendiente';
+        
+        if (task.fecha_limite) {
+            document.getElementById('taskDueDate').value = task.fecha_limite.split('T')[0];
+        }
+
+        // Handle SGR/Siniestro
+        const expInput = document.getElementById('taskExpedient');
+        const expLabel = document.querySelector("label[for='taskExpedient']");
+        if (expLabel) expLabel.textContent = "Nº SGR";
+        
+        if (expInput) {
+            let sgrValue = '';
+            if (task.num_siniestro) {
+                const { data: exp } = await supabaseClient
+                    .from('expedientes')
+                    .select('num_sgr')
+                    .eq('num_siniestro', task.num_siniestro)
+                    .maybeSingle();
+                if (exp) sgrValue = exp.num_sgr;
+            }
+            expInput.value = sgrValue || task.num_siniestro || '';
+            expInput.dataset.siniestro = task.num_siniestro;
+        }
+
+        // Char count
+        const charCount = document.getElementById('char-count');
+        if (charCount) charCount.textContent = (task.descripcion || '').length;
+
+        // Load responsibles
+        const respSelect = document.getElementById('taskResponsible');
+        if (respSelect) {
+            if (!usersData || usersData.length === 0) {
+                try {
+                    const session = await supabaseClient.auth.getSession();
+                    if (session?.data?.session?.access_token) {
+                        const response = await fetch('/api/responsables', {
+                            headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
+                        });
+                        if (response.ok) {
+                            const result = await response.json();
+                            usersData = Array.isArray(result) ? result : (result.data || []);
+                        }
+                    }
+                } catch (e) { console.warn(e); }
+            }
+
+            respSelect.innerHTML = '<option value="">Seleccionar...</option>';
+            const sourceData = (usersData && usersData.length > 0) ? usersData : responsiblesData;
+            
+            sourceData.forEach(user => {
+                const opt = document.createElement('option');
+                const name = user.full_name || user.name || user.email;
+                opt.value = name;
+                opt.textContent = name;
+                respSelect.appendChild(opt);
+            });
+
+            respSelect.value = task.responsable || '';
+        }
+        
+        // Show modal
+        const modal = document.getElementById('taskModal');
+        if (modal) modal.classList.add('active');
+        
+    } catch (error) {
+        console.error(error);
+        showToast('danger', 'Error', 'No se pudo cargar la tarea');
+    } finally {
+        hideLoading();
     }
-    
-    // Mostrar modal
-    const modal = document.getElementById('taskModal');
-    if (modal) modal.classList.add('active');
-    
-  } catch (error) {
-    console.error(error);
-    showToast('danger', 'Error', 'No se pudo cargar la tarea');
-  } finally {
-    hideLoading();
-  }
 }
 
 async function filterTasks() {
@@ -2308,14 +2384,8 @@ function renderResponsibles(data) {
     console.warn('No se encontró el cuerpo de la tabla de responsables');
     return;
   }
-function renderResponsiblesTable(stats) {
-    const container = document.getElementById('responsiblesList');
-    if (!container) return;
 
   tableBody.innerHTML = '';
-    // Mapeo de estados para UI
-    const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
-    const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
   if (!data || data.length === 0) {
     const tr = document.createElement('tr');
@@ -2323,6 +2393,28 @@ function renderResponsiblesTable(stats) {
       <td colspan="5" class="text-center py-3">
         No hay responsables configurados.
       </td>
+    `;
+    tableBody.appendChild(tr);
+    return;
+  }
+
+  data.forEach(responsible => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${responsible.name}</td>
+      <td>${responsible.email}</td>
+      <td>${responsible.status}</td>
+      <td>${responsible.activeTasks ?? 0}</td>
+      <td>${responsible.completedTasks ?? 0}</td>
+    `;
+    tableBody.appendChild(tr);
+  });
+}
+
+function renderResponsiblesTable(stats) {
+    const container = document.getElementById('responsiblesList');
+    if (!container) return;
+
     container.innerHTML = '';
 
     // FIX: Validación más robusta
@@ -2347,22 +2439,12 @@ function renderResponsiblesTable(stats) {
         </thead>
         <tbody></tbody>
     `;
-    tableBody.appendChild(tr);
-    return;
-  }
     const tbody = table.querySelector('tbody');
+    
+    // Mapeo de estados para UI
+    const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
+    const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
-  data.forEach(responsible => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${responsible.name}</td>
-      <td>${responsible.email}</td>
-      <td>${responsible.status}</td>
-      <td>${responsible.activeTasks ?? 0}</td>
-      <td>${responsible.completedTasks ?? 0}</td>
-    `;
-    tableBody.appendChild(tr);
-  });
     stats.forEach(stat => {
         // Validación adicional por si algún elemento no es válido
         if (!stat || typeof stat !== 'object') return;
