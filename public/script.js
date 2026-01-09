@@ -257,14 +257,6 @@ let systemLimits = {
     maxArchivedExpedientes: 10000
 };
 
-// Responsible persons data
-let responsiblesData = [
-    { id: 1, name: 'Juan Pérez', email: 'juan.perez@empresa.com', status: 'available', distribution: 'yes', activeTasks: 5, completedTasks: 23 },
-    { id: 2, name: 'María López', email: 'maria.lopez@empresa.com', status: 'vacation', distribution: 'no', activeTasks: 0, completedTasks: 18, returnDate: '2024-12-20' },
-    { id: 3, name: 'Carlos Rodríguez', email: 'carlos.rodriguez@empresa.com', status: 'available', distribution: 'yes', activeTasks: 3, completedTasks: 31 },
-    { id: 4, name: 'Ana Martínez', email: 'ana.martinez@empresa.com', status: 'sick', distribution: 'no', activeTasks: 0, completedTasks: 15, returnDate: '2024-12-15' }
-];
-
 // --- SISTEMA GLOBAL DE MANEJO DE ERRORES ---
 // Captura cualquier promesa rechazada que no tenga un bloque .catch() asociado
 window.addEventListener('unhandledrejection', function(event) {
@@ -1817,79 +1809,7 @@ async function loadTasks() {
 }
 
 async function editTask(id) {
-  showLoading();
-  try {
-    const { data: task, error } = await supabaseClient
-      .from('tareas')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error) throw error;
-    
-    // Obtener SGR del expediente relacionado
-    let numSGR = '';
-    if (task.num_siniestro) {
-      const { data: exp } = await supabaseClient
-        .from('expedientes')
-        .select('num_sgr')
-        .eq('num_siniestro', task.num_siniestro)
-        .single();
-      if (exp) numSGR = exp.num_sgr;
-    }
-    
-    // Rellenar formulario
-    document.getElementById('taskId').value = task.id;
-    
-    // ✅ CONFIGURAR CAMPO SGR Y GUARDAR REFERENCIA AL SINIESTRO
-    const expInput = document.getElementById('taskExpedient');
-    const expLabel = document.querySelector("label[for='taskExpedient']");
-    if (expLabel) expLabel.textContent = "Nº SGR";  // 👈 CAMBIA EL LABEL
-    if (expInput) {
-      expInput.value = numSGR || ''; // Mostrar SGR
-      expInput.dataset.siniestro = task.num_siniestro || ''; // Guardar Siniestro oculto
-      expInput.placeholder = "Ingrese Nº SGR";
-    }
-    
-    document.getElementById('taskResponsible').value = task.responsable || '';
-    document.getElementById('taskDescription').value = task.descripcion || '';
-    document.getElementById('taskPriority').value = task.prioridad || 'Media';
-    document.getElementById('taskDueDate').value = task.fecha_limite || '';
-    document.getElementById('taskStatus').value = task.estado || 'Pendiente';
-    
-    // Actualizar contador
-    document.getElementById('char-count').textContent = (task.descripcion || '').length;
-    
-    // Cargar responsables
-    const respSelect = document.getElementById('taskResponsible');
-    if (respSelect && respSelect.options.length <= 1) {
-      // Asegurar que tenemos datos de usuarios cargados
-      if (!usersData || usersData.length === 0) {
-          try {
-              const session = await supabaseClient.auth.getSession();
-              if (session?.data?.session?.access_token) {
-                  const response = await fetch('/api/responsables', {
-                      headers: { 'Authorization': `Bearer ${session.data.session.access_token}` }
-                  });
-                  if (response.ok) {
-                      const result = await response.json();
-                      usersData = Array.isArray(result) ? result : (result.data || []);
-                  }
-              }
-          } catch (e) {
-              console.warn('Error cargando responsables en modal (edit):', e);
-          }
-      }
-
-      respSelect.innerHTML = '<option value="">Seleccionar...</option>';
-      const sourceData = (usersData && usersData.length > 0) ? usersData : responsiblesData;
-      sourceData.forEach(user => {
-        const opt = document.createElement('option');
-        const name = user.full_name || user.name || user.email;
-        opt.value = name;
-        opt.textContent = name;
-        respSelect.appendChild(opt);
-      });
+  
       respSelect.value = task.responsable || '';
     }
     
@@ -2324,13 +2244,40 @@ async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {
     }
 }
 
+// ===============================
+// GESTIÓN DE RESPONSABLES (ADMIN)
+// ===============================
+
+// Datos de ejemplo de responsables (se sustituirán por datos reales desde Supabase/backend)
+let responsiblesData = [
+  { id: 1, name: 'Juan Pérez',   email: 'juan.perez@empresa.com',   status: 'available', distribution: 'yes', activeTasks: 5, completedTasks: 23 },
+  { id: 2, name: 'María López',  email: 'maria.lopez@empresa.com',  status: 'vacation', distribution: 'no',  activeTasks: 0, completedTasks: 18, returnDate: '2024-12-20' },
+  { id: 3, name: 'Carlos Rodríguez', email: 'carlos.rodriguez@empresa.com', status: 'available', distribution: 'yes', activeTasks: 3, completedTasks: 31 },
+  { id: 4, name: 'Ana Martínez', email: 'ana.martinez@empresa.com', status: 'sick',      distribution: 'no',  activeTasks: 0, completedTasks: 15, returnDate: '2024-12-15' }
+];
+
+// Función para cargar responsables (se ejecuta al entrar en la sección 'admin' desde showSection)
 // Función para cargar responsables
 async function loadResponsibles() {
+  console.log('Cargando responsables...');
+  showLoading();
+  try {
+    // TODO: aquí iría la llamada real, por ejemplo:
+    // const { data, error } = await supabaseClient.from('responsables').select('*');
+    // if (error) throw error;
+    // responsiblesData = mapResponsiblesFromDb(data);
     console.log('Cargando responsables...');
     showLoading();
     const container = document.getElementById('responsiblesList');
     if (container) container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"></div></div>';
 
+    renderResponsibles(responsiblesData);
+  } catch (error) {
+    console.error('Error cargando responsables:', error);
+    showToast('danger', 'Error', 'No se pudieron cargar los responsables.');
+  } finally {
+    hideLoading();
+  }
     try {
         // Usar WorkloadAPI para obtener estadísticas completas
         const result = await workloadAPI.getStats();
@@ -2354,14 +2301,28 @@ async function loadResponsibles() {
     }
 }
 
+// Pinta la tabla de responsables en la UI
+function renderResponsibles(data) {
+  const tableBody = document.getElementById('responsiblesTableBody');
+  if (!tableBody) {
+    console.warn('No se encontró el cuerpo de la tabla de responsables');
+    return;
+  }
 function renderResponsiblesTable(stats) {
     const container = document.getElementById('responsiblesList');
     if (!container) return;
 
+  tableBody.innerHTML = '';
     // Mapeo de estados para UI
     const statusMap = { 'active': 'Activo', 'inactive': 'Inactivo', 'vacation': 'Vacaciones', 'sick_leave': 'Baja Médica', 'permit': 'Permiso' };
     const classMap = { 'active': 'bg-success', 'inactive': 'bg-secondary', 'vacation': 'bg-warning text-dark', 'sick_leave': 'bg-danger', 'permit': 'bg-info text-dark' };
 
+  if (!data || data.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td colspan="5" class="text-center py-3">
+        No hay responsables configurados.
+      </td>
     container.innerHTML = '';
 
     // FIX: Validación más robusta
@@ -2386,8 +2347,22 @@ function renderResponsiblesTable(stats) {
         </thead>
         <tbody></tbody>
     `;
+    tableBody.appendChild(tr);
+    return;
+  }
     const tbody = table.querySelector('tbody');
 
+  data.forEach(responsible => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${responsible.name}</td>
+      <td>${responsible.email}</td>
+      <td>${responsible.status}</td>
+      <td>${responsible.activeTasks ?? 0}</td>
+      <td>${responsible.completedTasks ?? 0}</td>
+    `;
+    tableBody.appendChild(tr);
+  });
     stats.forEach(stat => {
         // Validación adicional por si algún elemento no es válido
         if (!stat || typeof stat !== 'object') return;
@@ -4195,53 +4170,6 @@ async function insertarExpedientesEnSupabase(expedientes, fileName, opciones = {
             throw new Error('Error de conexión. No se pudo contactar con el servidor.');
         }
         throw new Error('Error al importar expedientes: ' + error.message);
-    }
-}
-
-function getOrCreateDetailsModal() {
-    let modalEl = document.getElementById('detailsModal');
-    if (!modalEl) {
-        const modalHtml = `
-        <div class="modal fade" id="detailsModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-centered">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="detailsModalTitle">Detalles</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body" id="detailsModalBody">
-                        <!-- Contenido dinámico -->
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        modalEl = document.getElementById('detailsModal');
-    }
-    return modalEl;
-}
-
-function openDatePicker(element, id) {
-    const dateInput = document.getElementById(id);
-    if (dateInput) {
-        // Usar API moderna si está disponible (Chrome 99+, Firefox 101+, Safari 16+)
-        if (typeof dateInput.showPicker === 'function') {
-            try {
-                dateInput.showPicker();
-            } catch (e) {
-                // Fallback si falla (ej: no disparado por interacción de usuario directa)
-                dateInput.focus();
-            }
-        } else {
-            // Fallback para navegadores antiguos
-            dateInput.focus();
-            dateInput.click();
-        }
-    } else {
-        console.warn('Elemento de fecha no encontrado:', id);
     }
 }
 
