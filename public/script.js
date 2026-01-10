@@ -1742,6 +1742,37 @@ async function saveTask() {
     }
 }
 
+
+// --- FUNCIONES AUXILIARES PARA CONSULTAS ---
+
+async function buildTasksQuery(columns) {
+    return supabaseClient
+        .from('tareas')
+        .select(columns);
+}
+
+async function enrichTasksWithExpedientes(tasks) {
+    if (!tasks || tasks.length === 0) return tasks;
+    
+    const expedienteIds = [...new Set(tasks.map(t => t.id_expediente).filter(Boolean))];
+    if (expedienteIds.length === 0) return tasks;
+    
+    const { data: expedientes } = await supabaseClient
+        .from('expedientes')
+        .select('id, num_expediente')
+        .in('id', expedienteIds);
+    
+    if (!expedientes) return tasks;
+    
+    const expedienteMap = Object.fromEntries(
+        expedientes.map(exp => [exp.id, exp])
+    );
+    
+    return tasks.map(task => ({
+        ...task,
+        num_expediente: task.id_expediente ? expedienteMap[task.id_expediente]?.num_expediente : null
+    }));
+}
 async function loadTasks() {
     console.log('Cargando tareas...');
     const tableBody = document.getElementById('tasksTable');
@@ -1751,7 +1782,7 @@ async function loadTasks() {
     
     try {
         // 1. Construir Query usando el helper centralizado
-        const query = buildTasksQuery('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado');
+        const query = await buildTasksQuery('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado');
         
         // 2. Aplicar Paginación y Orden
         const from = (currentTaskPage - 1) * TASKS_PER_PAGE;
