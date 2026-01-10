@@ -1571,14 +1571,14 @@ async function saveTask() {
         if (id) {
             // Actualizar
             const { error: updateError } = await supabaseClient
-                .from('seguimientos')
+                .from('tareas')
                 .update(taskData)
                 .eq('id', id);
             error = updateError;
         } else {
             // Insertar
             const { error: insertError } = await supabaseClient
-                .from('seguimientos')
+                .from('tareas')
                 .insert([taskData]);
             error = insertError;
         }
@@ -1640,7 +1640,7 @@ async function loadTasks() {
         // 1. Consultar TAREAS (Sin JOIN para evitar error de FK inexistente)
         // OPTIMIZACIÓN: Seleccionar solo columnas necesarias para reducir transferencia de datos
         let query = supabaseClient
-            .from('seguimientos')
+            .from('tareas')
             .select('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado', { count: 'exact' });
         
         // FILTRO POR ROL (Usuario solo ve sus tareas, Admin ve todo)
@@ -1815,7 +1815,7 @@ async function editTask(id) {
 
     try {
         const { data: task, error } = await supabaseClient
-            .from('seguimientos')
+            .from('tareas')
             .select('*')
             .eq('id', id)
             .single();
@@ -2861,7 +2861,7 @@ async function updateSystemStatusTable() {
         const { count: expCount } = await supabaseClient.from('expedientes').select('*', { count: 'exact', head: true }).neq('estado', 'Archivado');
         currentExpedientes = expCount || 0;
 
-        const { count: taskCount } = await supabaseClient.from('seguimientos').select('*', { count: 'exact', head: true }).neq('estado', 'Completada');
+        const { count: taskCount } = await supabaseClient.from('tareas').select('*', { count: 'exact', head: true }).neq('estado', 'Completada');
         currentTasks = taskCount || 0;
 
         const { count: archCount } = await supabaseClient.from('expedientes').select('*', { count: 'exact', head: true }).eq('estado', 'Archivado');
@@ -3828,7 +3828,7 @@ async function verificarYEliminarDuplicados(expedientes) {
         let tareasActivasSet = new Set();
         if (todosSiniestrosExistentes.length > 0) {
             const { data: tareas } = await supabaseClient
-                .from('seguimientos')
+                .from('tareas')
                 .select('num_siniestro') // FIX: Join lógico por num_siniestro
                 .in('num_siniestro', todosSiniestrosExistentes);
             
@@ -4100,8 +4100,8 @@ function setupRealtimeSubscription() {
     console.log('Configurando suscripción Realtime para:', currentUser.name);
 
     realtimeSubscription = supabaseClient
-        .channel('public:seguimientos')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'seguimientos' }, payload => {
+        .channel('public:tareas')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas' }, payload => {
             handleRealtimeEvent(payload);
         })
         .subscribe((status) => {
@@ -4299,7 +4299,7 @@ async function enviarResumenTareasPorGestor() {
     try {
         // 1. Obtener tareas pendientes
         const { data: tasks, error } = await supabaseClient
-            .from('seguimientos')
+            .from('tareas')
             .select('*')
             .neq('estado', 'Completada')
             .neq('estado', 'Recobrado')
@@ -4414,7 +4414,7 @@ async function archivarFinalizados() {
     try {
         // Buscar tareas finalizadas o finalizadas parciales
         const { data: finishedTasks, error } = await supabaseClient
-            .from('seguimientos')
+            .from('tareas')
             .select('*')
             .or('estado.eq.Completada,estado.eq.Finalizado,estado.eq.Finalizado Parcial');
             
@@ -4429,7 +4429,7 @@ async function archivarFinalizados() {
             const ids = finishedTasks.map(t => t.id);
             
             const { error: updateError } = await supabaseClient
-                .from('seguimientos')
+                .from('tareas')
                 .update({ estado: 'Archivado' })
                 .in('id', ids);
                 
@@ -4520,7 +4520,7 @@ async function limpiarExpedientesHuerfanos() {
     try {
         // 1. Obtener todos los siniestros que tienen registro en la tabla tareas
         const { data: tareas, error: errTareas } = await supabaseClient
-            .from('seguimientos')
+            .from('tareas')
             .select('num_siniestro');
             
         if (errTareas) throw errTareas;
@@ -4596,7 +4596,7 @@ async function resetBaseDeDatos() {
     
     showLoading();
     try {
-        await supabaseClient.from('seguimientos').delete().neq('id', 0); // Borrar todas las tareas
+        await supabaseClient.from('tareas').delete().neq('id', 0); // Borrar todas las tareas
         await supabaseClient.from('duplicados').delete().neq('id', 0); // Borrar duplicados
         // Borrar expedientes (usando filtro neq id null/uuid-zero para seleccionar todos)
         await supabaseClient.from('expedientes').delete().neq('num_siniestro', 'dummy_value_impossible'); 
@@ -4665,7 +4665,7 @@ function loadTasksPage(page) {
 
 // Helper para construir la query de tareas (DRY)
 async function buildTasksQuery() {
-    let query = supabaseClient.from('seguimientos').select('*', { count: 'exact' });
+    let query = supabaseClient.from('tareas').select('*', { count: 'exact' });
     
     // FILTRO POR ROL
     if (currentUser && !currentUser.isAdmin) {
