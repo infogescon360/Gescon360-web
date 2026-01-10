@@ -1782,8 +1782,7 @@ async function loadTasks() {
     
     try {
         // 1. Construir Query usando el helper centralizado
-        const query = await buildTasksQuery('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado');
-        
+        const query = buildTasksQuery('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado');        
         // 2. Aplicar Paginación y Orden
         const from = (currentTaskPage - 1) * TASKS_PER_PAGE;
         const to = from + TASKS_PER_PAGE - 1;
