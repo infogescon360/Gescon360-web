@@ -1275,6 +1275,20 @@ async function viewExpedient(id) {
         setText('viewCausante', exp.nombre_causante);
         setText('viewCiaCausante', exp.cia_causante);
 
+        // Renderizar notas
+        renderExpedientNotes(exp.notas, id);
+
+        // Configurar botón de agregar nota
+        const btnAddNote = document.getElementById('btnAddNote');
+        const inputNote = document.getElementById('newNoteInput');
+        if (btnAddNote && inputNote) {
+            inputNote.value = ''; // Limpiar input
+            // Usar onclick para evitar acumulación de listeners
+            btnAddNote.onclick = () => addExpedientNote(id);
+            // Permitir Enter para enviar
+            inputNote.onkeyup = (e) => { if(e.key === 'Enter') addExpedientNote(id); };
+        }
+
         // Configurar botón de editar
         const btnEdit = document.getElementById('btnEditExpedient');
         if (btnEdit) {
@@ -1295,6 +1309,105 @@ async function viewExpedient(id) {
         showToast('danger', 'Error', 'No se pudo cargar el expediente: ' + error.message);
     } finally {
         hideLoading();
+    }
+}
+
+function renderExpedientNotes(notas, expedientId) {
+    const container = document.getElementById('viewNotasContainer');
+    if (!container) return;
+
+    if (!notas || !Array.isArray(notas) || notas.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted small py-2">No hay notas registradas.</div>';
+        return;
+    }
+
+    // Ordenar por fecha descendente (más reciente primero)
+    const notasSorted = [...notas].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    container.innerHTML = notasSorted.map(nota => {
+        const fecha = new Date(nota.fecha).toLocaleString('es-ES');
+        // Botón de eliminar solo para admins y si la nota tiene ID
+        const deleteBtn = (currentUser && currentUser.isAdmin && nota.id) 
+            ? `<button class="btn btn-link btn-sm text-danger p-0 ms-2" onclick="deleteExpedientNote('${expedientId}', '${nota.id}')" title="Eliminar nota" style="text-decoration: none;"><i class="bi bi-trash"></i></button>` 
+            : '';
+
+        return `
+            <div class="mb-2 pb-2 border-bottom">
+                <div class="d-flex justify-content-between small text-muted">
+                    <strong>${nota.usuario || 'Usuario'}</strong>
+                    <div><span>${fecha}</span>${deleteBtn}</div>
+                </div>
+                <div class="text-dark">${nota.texto}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function deleteExpedientNote(expedientId, noteId) {
+    if (!confirm('¿Estás seguro de eliminar esta nota?')) return;
+    
+    // Mostrar spinner en el contenedor de notas temporalmente o loading global
+    showLoading();
+
+    try {
+        const session = await supabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        
+        const response = await fetch(`/api/expedientes/${expedientId}/notas/${noteId}`, {
+            method: 'DELETE',
+            headers: { 
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) throw new Error('Error al eliminar nota');
+        
+        const result = await response.json();
+        renderExpedientNotes(result.notas, expedientId);
+        showToast('success', 'Eliminado', 'Nota eliminada correctamente');
+    } catch (error) {
+        console.error(error);
+        showToast('danger', 'Error', 'No se pudo eliminar la nota');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function addExpedientNote(id) {
+    const input = document.getElementById('newNoteInput');
+    const texto = input.value.trim();
+    
+    if (!texto) return;
+
+    const btn = document.getElementById('btnAddNote');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const session = await supabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+
+        const response = await fetch(`/api/expedientes/${id}/notas`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ texto })
+        });
+
+        if (!response.ok) throw new Error('Error al guardar nota');
+        
+        const result = await response.json();
+        renderExpedientNotes(result.notas, id);
+        input.value = '';
+        
+    } catch (error) {
+        console.error(error);
+        showToast('danger', 'Error', 'No se pudo agregar la nota');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Agregar';
     }
 }
 
@@ -1637,52 +1750,10 @@ async function loadTasks() {
     showLoading();
     
     try {
-        // 1. Consultar TAREAS (Sin JOIN para evitar error de FK inexistente)
-        // OPTIMIZACIÓN: Seleccionar solo columnas necesarias para reducir transferencia de datos
-        let query = supabaseClient
-            .from('tareas')
-            .select('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado', { count: 'exact' });
+        // 1. Construir Query usando el helper centralizado
+        const query = await buildTasksQuery('id, num_siniestro, descripcion, responsable, estado, prioridad, fecha_limite, importe_recobrado');
         
-        // FILTRO POR ROL (Usuario solo ve sus tareas, Admin ve todo)
-        if (currentUser && !currentUser.isAdmin) {
-            const userIdentifier = currentUser.name;
-            query = query.or(`responsable.eq.${currentUser.name},responsable.eq.${currentUser.email}`);
-        }
-        
-        // Aplicar filtros activos
-        if (activeTaskFilters.responsable) query = query.eq('responsable', activeTaskFilters.responsable);
-        if (activeTaskFilters.estado) query = query.eq('estado', activeTaskFilters.estado);
-        if (activeTaskFilters.prioridad) query = query.eq('prioridad', activeTaskFilters.prioridad);
-        
-        // Filtro de búsqueda por texto (Nº Siniestro, Descripción o Nº SGR)
-        const searchInput = document.getElementById('taskSearchInput');
-        const searchTerm = searchInput ? searchInput.value.trim() : '';
-        
-        if (searchTerm) {
-            // Búsqueda mejorada: Incluir búsqueda por SGR (que está en tabla expedientes)
-            let sgrSiniestros = [];
-            
-            // Intentamos buscar coincidencias en expedientes por SGR
-            const { data: sgrMatches } = await supabaseClient
-                .from('expedientes')
-                .select('num_siniestro')
-                .ilike('num_sgr', `%${searchTerm}%`)
-                .limit(20); // Límite para evitar URLs gigantes
-                
-            if (sgrMatches && sgrMatches.length > 0) {
-                sgrSiniestros = sgrMatches.map(e => e.num_siniestro);
-            }
-
-            // Construir query OR: Descripción OR Siniestro OR (Siniestros encontrados por SGR)
-            let orConditions = [`num_siniestro.ilike.%${searchTerm}%`, `descripcion.ilike.%${searchTerm}%`];
-            if (sgrSiniestros.length > 0) {
-                // Añadimos cada siniestro encontrado como una condición EQ
-                sgrSiniestros.forEach(sin => orConditions.push(`num_siniestro.eq.${sin}`));
-            }
-            
-            query = query.or(orConditions.join(','));
-        }
-
+        // 2. Aplicar Paginación y Orden
         const from = (currentTaskPage - 1) * TASKS_PER_PAGE;
         const to = from + TASKS_PER_PAGE - 1;
         
@@ -1692,114 +1763,20 @@ async function loadTasks() {
         
         if (error) throw error;
 
-        // 2. Consultar EXPEDIENTES relacionados manualmente (Join en memoria)
-        // Esto evita el error PGRST200 si no hay Foreign Key definida en la base de datos
-        let tasksWithExpedientes = tasks || [];
+        // 3. Enriquecer datos con información de expedientes
+        const tasksWithExpedientes = await enrichTasksWithExpedientes(tasks);
         
-        if (tasks && tasks.length > 0) {
-            const siniestros = tasks.map(t => t.num_siniestro).filter(n => n);
-            
-            if (siniestros.length > 0) {
-                // Intentamos obtener datos extra. Usamos try/catch por si falta alguna columna
-                try {
-                    const { data: exps } = await supabaseClient
-                        .from('expedientes')
-                        .select('num_siniestro, num_sgr, referencia_gescon') 
-                        .in('num_siniestro', siniestros);
+        // 4. Renderizar tabla
+        renderTasksTable(tasksWithExpedientes, tableBody);
+        
+        // 5. Renderizar paginación
+        renderTaskPagination(count || 0);
 
-                    if (exps) {
-                        const expMap = new Map(exps.map(e => [e.num_siniestro, e]));
-                        tasksWithExpedientes = tasks.map(t => {
-                            const exp = expMap.get(t.num_siniestro);
-                            return {
-                                ...t,
-                                expedientes: exp ? { 
-                                    referencia_gescon: exp.referencia_gescon, 
-                                    num_sgr: exp.num_sgr 
-                                } : null
-                            };
-                        });
-                    }
-                } catch (err) {
-                    console.warn('No se pudieron cargar detalles extra de expedientes:', err);
-                }
-            }
-        }
-        
-        tableBody.innerHTML = '';
-        
-        if (!tasksWithExpedientes || tasksWithExpedientes.length === 0) {
-            tableBody.innerHTML = '<tr><td colspan="11" class="text-center p-4">No hay tareas registradas.</td></tr>';
-        } else {
-            const todayStr = new Date().toISOString().split('T')[0];
-            
-            tasksWithExpedientes.forEach(task => {
-                const row = document.createElement('tr');
-                
-                // --- LÓGICA DE ESTILOS Y ESTADOS ---
-                let rowClass = '';
-                let dateClass = '';
-                let recobradoClass = 'cell-recobrado';
-                
-                const estado = task.estado || '';
-                const fechaLimite = task.fecha_limite ? task.fecha_limite.split('T')[0] : '';
-                
-                // 1. Colores por Estado
-                if (estado === 'Pdte. revisión') rowClass = 'task-row-pdte-revision';
-                else if (estado === 'Iniciada' || estado === 'En Proceso') rowClass = 'task-row-iniciada';
-                else if (estado === 'Completada' || estado === 'Finalizado') rowClass = 'task-row-finalizado';
-                else if (estado === 'Finalizado Parcial') rowClass = 'task-row-finalizado-parcial';
-                else if (estado === 'Rehusado' || estado === 'Rehusado NO cobertura') rowClass = 'task-row-rehusado';
-                else if (estado === 'Datos NO válidos') rowClass = 'task-row-datos-no-validos';
-                
-                // 2. Lógica de Fecha (Si coincide con HOY -> Rojo)
-                if (fechaLimite === todayStr) {
-                    dateClass = 'cell-date-today';
-                }
-                
-                // 3. Obtener referencia_gescon desde el JOIN
-                const referenciaGescon = task.expedientes?.referencia_gescon || '-';
-                const numSGR = task.expedientes?.num_sgr || '';
-                
-                // 4. Extraer solo el NOMBRE del responsable (sin @email)
-                let responsableNombre = task.responsable || '-';
-                if (responsableNombre.includes('@')) {
-                    // Si es email, extraer la parte antes de @
-                    responsableNombre = responsableNombre.split('@')[0];
-                }
-                
-                // 5. Importe recobrado
-                const importeRecobrado = task.importe_recobrado 
-                    ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(task.importe_recobrado) 
-                    : '-';
-                
-                row.className = rowClass;
-                row.innerHTML = `
-                    <td><input type="checkbox" value="${task.id}"></td>
-                    <td>${task.num_siniestro || '-'}</td>
-                    <td>${referenciaGescon}</td>
-                    <td>${numSGR}</td>
-                    <td contenteditable="true" data-field="descripcion" data-id="${task.id}">${task.descripcion || ''}</td>
-                    <td>${responsableNombre}</td>
-                    <td><span class="status-badge status-${getStatusClass(task.estado)}">${task.estado}</span></td>
-                    <td><span class="priority-indicator priority-${task.prioridad.toLowerCase()}">${task.prioridad}</span></td>
-                    <td><span class="${dateClass}">${formatDate(task.fecha_limite)}</span></td>
-                    <td class="${recobradoClass}">${importeRecobrado}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary" onclick="editTask('${task.id}')"><i class="bi bi-pencil"></i></button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-            
-            // PAGINACIÓN: Implementar tras cargar
-            renderTaskPagination(count || 0);
-        }
     } catch (error) {
         console.error('Error loading tasks:', error);
         let errorMsg = 'No se pudieron cargar las tareas.';
         
-        if (error.code === 'PGRST205') errorMsg = 'La tabla "tareas" no existe en Supabase. Ejecuta el script SQL.';
+        if (error.code === 'PGRST205') errorMsg = `Error de tabla faltante: ${error.message}. Ejecuta el script SQL.`;
         else if (error.code === 'PGRST200') errorMsg = 'Error de relación (FK) entre tablas.';
         else errorMsg += ` (${error.message})`;
 
@@ -1807,6 +1784,95 @@ async function loadTasks() {
     } finally {
         hideLoading();
     }
+}
+
+async function enrichTasksWithExpedientes(tasks) {
+    if (!tasks || tasks.length === 0) return [];
+    
+    const siniestros = tasks.map(t => t.num_siniestro).filter(n => n);
+    if (siniestros.length === 0) return tasks;
+
+    try {
+        const { data: exps } = await supabaseClient
+            .from('expedientes')
+            .select('num_siniestro, num_sgr, referencia_gescon') 
+            .in('num_siniestro', siniestros);
+
+        if (exps) {
+            const expMap = new Map(exps.map(e => [e.num_siniestro, e]));
+            return tasks.map(t => {
+                const exp = expMap.get(t.num_siniestro);
+                return {
+                    ...t,
+                    expedientes: exp ? { 
+                        referencia_gescon: exp.referencia_gescon, 
+                        num_sgr: exp.num_sgr 
+                    } : null
+                };
+            });
+        }
+    } catch (err) {
+        console.warn('No se pudieron cargar detalles extra de expedientes:', err);
+    }
+    return tasks;
+}
+
+function renderTasksTable(tasks, tableBody) {
+    tableBody.innerHTML = '';
+    
+    if (!tasks || tasks.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="11" class="text-center p-4">No hay tareas registradas.</td></tr>';
+        return;
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    tasks.forEach(task => {
+        const row = document.createElement('tr');
+        
+        // --- LÓGICA DE ESTILOS Y ESTADOS ---
+        let rowClass = '';
+        let dateClass = '';
+        let recobradoClass = 'cell-recobrado';
+        
+        const estado = task.estado || '';
+        const fechaLimite = task.fecha_limite ? task.fecha_limite.split('T')[0] : '';
+        
+        // 1. Colores por Estado
+        if (estado === 'Pdte. revisión') rowClass = 'task-row-pdte-revision';
+        else if (estado === 'Iniciada' || estado === 'En Proceso') rowClass = 'task-row-iniciada';
+        else if (estado === 'Completada' || estado === 'Finalizado') rowClass = 'task-row-finalizado';
+        else if (estado === 'Finalizado Parcial') rowClass = 'task-row-finalizado-parcial';
+        else if (estado === 'Rehusado' || estado === 'Rehusado NO cobertura') rowClass = 'task-row-rehusado';
+        else if (estado === 'Datos NO válidos') rowClass = 'task-row-datos-no-validos';
+        
+        // 2. Lógica de Fecha (Si coincide con HOY -> Rojo)
+        if (fechaLimite === todayStr) dateClass = 'cell-date-today';
+        
+        // 3. Datos derivados
+        const referenciaGescon = task.expedientes?.referencia_gescon || '-';
+        const numSGR = task.expedientes?.num_sgr || '';
+        const responsableNombre = (task.responsable || '-').split('@')[0];
+        const importeRecobrado = task.importe_recobrado ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(task.importe_recobrado) : '-';
+        
+        row.className = rowClass;
+        row.innerHTML = `
+            <td><input type="checkbox" value="${task.id}"></td>
+            <td>${task.num_siniestro || '-'}</td>
+            <td>${referenciaGescon}</td>
+            <td>${numSGR}</td>
+            <td contenteditable="true" data-field="descripcion" data-id="${task.id}">${task.descripcion || ''}</td>
+            <td>${responsableNombre}</td>
+            <td><span class="status-badge status-${getStatusClass(task.estado)}">${task.estado}</span></td>
+            <td><span class="priority-indicator priority-${task.prioridad.toLowerCase()}">${task.prioridad}</span></td>
+            <td><span class="${dateClass}">${formatDate(task.fecha_limite)}</span></td>
+            <td class="${recobradoClass}">${importeRecobrado}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editTask('${task.id}')"><i class="bi bi-pencil"></i></button>
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
 }
 
 async function editTask(id) {
@@ -4664,8 +4730,8 @@ function loadTasksPage(page) {
 }
 
 // Helper para construir la query de tareas (DRY)
-async function buildTasksQuery() {
-    let query = supabaseClient.from('tareas').select('*', { count: 'exact' });
+async function buildTasksQuery(columns = '*') {
+    let query = supabaseClient.from('tareas').select(columns, { count: 'exact' });
     
     // FILTRO POR ROL
     if (currentUser && !currentUser.isAdmin) {
@@ -4723,9 +4789,14 @@ async function exportTasksToExcel() {
             return;
         }
 
+        // Enriquecer datos con información de expedientes (SGR, Referencia)
+        const tasksWithExpedientes = await enrichTasksWithExpedientes(tasks);
+
         // Preparar datos para Excel
-        const exportData = tasks.map(t => ({
+        const exportData = tasksWithExpedientes.map(t => ({
             'Nº Siniestro': t.num_siniestro || '',
+            'Referencia Gescon': t.expedientes?.referencia_gescon || '',
+            'Nº SGR': t.expedientes?.num_sgr || '',
             'Descripción': t.descripcion || '',
             'Responsable': t.responsable || '',
             'Estado': t.estado || '',

@@ -82,26 +82,8 @@ export class WorkloadService {
     const expedienteIds = assignments.map(a => a.expediente_id);
 
     // 2. Obtener seguimientos que cumplen criterios de revisión
-    const { data: seguimientos, error: sError } = await supabaseAdmin
-      .from('seguimientos')
-      .select('id, expediente_id, status, priority, ultima_revision')
-      .in('expediente_id', expedienteIds)
-      .in('status', ['pendiente', 'en_proceso'])
-      .in('priority', ['alta', 'media'])
-      .or(`ultima_revision.is.null,ultima_revision.lt.${today}`);
-
-    if (sError) throw sError;
-
-    // 3. Combinar resultados para incluir assignment_id (Simular JOIN)
-    return (seguimientos || []).map(s => {
-      const assignment = assignments.find(a => a.expediente_id === s.expediente_id);
-      return {
-        assignment_id: assignment ? assignment.id : null,
-        seguimiento_id: s.id,
-        expediente_id: s.expediente_id,
-        ...s
-      };
-    });
+    // NOTA: Tabla 'seguimientos' eliminada. Retornamos array vacío.
+    return [];
   }
 
   /**

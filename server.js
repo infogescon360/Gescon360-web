@@ -1433,17 +1433,12 @@ app.get('/api/expedientes/:id', requireAuth, async (req, res) => {
     
     const { data, error } = await supabase
       .from('expedientes')
-      .select('*, seguimientos(*)')
+      .select('*')
       .eq('id', id)
       .single();
     
     if (error) return res.status(404).json({ error: 'Expediente no encontrado' });
     
-    // Ordenar seguimientos por fecha descendente (más reciente primero)
-    if (data.seguimientos && Array.isArray(data.seguimientos)) {
-      data.seguimientos.sort((a, b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
-    }
-
     res.json(data);
   } catch (e) {
     console.error('Error en GET /api/expedientes/:id:', e);
@@ -1520,6 +1515,95 @@ app.put('/api/expedientes/:id', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/expedientes/:id/notas', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { texto } = req.body;
+    const user = req.user;
+
+    if (!texto) return res.status(400).json({ error: 'El texto es obligatorio' });
+
+    // Obtener nombre del usuario desde metadatos o email
+    const userName = user.user_metadata?.full_name || user.email;
+
+    const nuevaNota = {
+      id: crypto.randomUUID(),
+      fecha: new Date().toISOString(),
+      usuario: userName,
+      texto: texto
+    };
+
+    // 1. Obtener notas actuales
+    const { data: exp, error: fetchError } = await supabaseAdmin
+      .from('expedientes')
+      .select('notas')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const notas = Array.isArray(exp.notas) ? exp.notas : [];
+    notas.push(nuevaNota);
+
+    // 2. Guardar array actualizado
+    const { error: updateError } = await supabaseAdmin
+      .from('expedientes')
+      .update({ notas })
+      .eq('id', id);
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, notas });
+  } catch (e) {
+    console.error('Error agregando nota:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/expedientes/:id/notas/:noteId', requireAuth, async (req, res) => {
+  try {
+    const { id, noteId } = req.params;
+    const user = req.user;
+
+    // Verificar permisos de administrador
+    const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
+    let isAdmin = isSuperAdmin;
+    if (!isAdmin) {
+        const appMeta = user.app_metadata || {};
+        isAdmin = appMeta.role === 'admin' || appMeta.is_super_admin === true;
+    }
+
+    if (!isAdmin) {
+        return res.status(403).json({ error: 'Solo administradores pueden eliminar notas' });
+    }
+
+    // 1. Obtener notas actuales
+    const { data: exp, error: fetchError } = await supabaseAdmin
+      .from('expedientes')
+      .select('notas')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    let notas = Array.isArray(exp.notas) ? exp.notas : [];
+    const notasFiltradas = notas.filter(n => n.id !== noteId);
+
+    // 2. Guardar array actualizado
+    const { error: updateError } = await supabaseAdmin
+      .from('expedientes')
+      .update({ notas: notasFiltradas })
+      .eq('id', id);
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, notas: notasFiltradas });
+  } catch (e) {
+    console.error('Error eliminando nota:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.delete('/api/expedientes/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -1591,55 +1675,6 @@ app.post('/api/expedientes/:id/archive', requireAuth, async (req, res) => {
     res.json({ success: true, message: `Expediente archivado con motivo: ${motivo}` });
   } catch (e) {
     console.error('Error en /api/expedientes/:id/archive:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/api/expedientes/:id/seguimientos', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const { data, error } = await supabase
-      .from('seguimientos')
-      .select('*')
-      .eq('expediente_id', id)
-      .order('fecha', { ascending: false });
-    
-    if (error) return res.status(500).json({ error: error.message });
-    
-    res.json(data || []);
-  } catch (e) {
-    console.error('Error en GET /api/expedientes/:id/seguimientos:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/expedientes/:id/seguimientos', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { comentario, tipo, usuario_id } = req.body;
-    
-    if (!comentario) {
-      return res.status(400).json({ error: 'El comentario es obligatorio' });
-    }
-    
-    const { data, error } = await supabase
-      .from('seguimientos')
-      .insert({
-        expediente_id: id,
-        comentario,
-        tipo: tipo || 'nota',
-        usuario_id: usuario_id || null,
-        fecha: new Date().toISOString()
-      })
-      .select()
-      .single();
-    
-    if (error) return res.status(500).json({ error: error.message });
-    
-    res.status(201).json(data);
-  } catch (e) {
-    console.error('Error en POST /api/expedientes/:id/seguimientos:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1916,9 +1951,6 @@ app.delete('/admin/users/:id', requireAuth, async (req, res) => {
 
     // 1. Desvincular expedientes (gestor_id) para evitar errores de integridad referencial
     await supabaseAdmin.from('expedientes').update({ gestor_id: null }).eq('gestor_id', targetUserId);
-
-    // 2. Desvincular seguimientos (usuario_id)
-    await supabaseAdmin.from('seguimientos').update({ usuario_id: null }).eq('usuario_id', targetUserId);
 
     // 3. Desvincular tareas (responsable es texto: nombre o email)
     if (targetProfile) {

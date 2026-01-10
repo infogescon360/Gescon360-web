@@ -1026,6 +1026,17 @@
                         <p class="mb-1"><strong>Cía. Causante:</strong> <span id="viewCiaCausante"></span></p>
                     </div>
                 </div>
+                <hr>
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2"><i class="bi bi-chat-left-text"></i> Notas y Comentarios</h6>
+                    <div id="viewNotasContainer" class="border rounded p-2 mb-2 bg-light" style="max-height: 200px; overflow-y: auto; font-size: 0.9rem;">
+                        <div class="text-center text-muted small py-2">No hay notas registradas.</div>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" id="newNoteInput" class="form-control form-control-sm" placeholder="Escribir una nota o comentario...">
+                        <button class="btn btn-sm btn-outline-primary" type="button" id="btnAddNote">Agregar</button>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-custom btn-outline-custom" onclick="closeModal('expedientModal')">Cerrar</button>
