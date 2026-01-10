@@ -147,19 +147,27 @@ body {
 
 /* Logo en pantalla de autenticación */
 .auth-logo {
-    width: 150px;
-    height: 150px;
+    width: 60px;
+    height: 60px;
     object-fit: contain;
     margin-bottom: 1rem;
 }
 
-/* Logo en el sidebar */
+/* Zona del logo */
 .sidebar-logo {
-    width: 40px;
-    height: 40px;
-    object-fit: contain;
-    margin-right: 10px;
-    vertical-align: middle;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 12px;
+    box-sizing: border-box;
+}
+
+/* Imagen del logo */
+.sidebar-logo-img {
+    max-width: 100%;
+    height: auto;
+    /* tamaño máximo deseado en pantallas grandes */
+    max-height: 60px;
 }
 
 .sidebar-header {
@@ -179,10 +187,11 @@ body {
     top: 0;
     left: 0;
     height: 100vh;
-    width: 250px;
+    width: 260px;
+    min-width: 240px;
     background-color: var(--primary-color);
     color: white;
-    padding-top: 20px;
+    padding-top: 0; /* Padding handled by logo container */
     z-index: 1000;
     transition: all 0.3s ease;
     display: none; /* Oculto por defecto, se muestra con body.authenticated */
@@ -197,26 +206,32 @@ body {
     margin-bottom: 5px;
 }
 
-.sidebar-menu a {
+.menu-item a {
     display: flex;
     align-items: center;
-    padding: 12px 20px;
+    padding: 10px 14px;
     color: rgba(255, 255, 255, 0.8);
     text-decoration: none;
     transition: all 0.2s ease;
     border-left: 3px solid transparent;
     cursor: pointer;
+    white-space: nowrap;
 }
 
-.sidebar-menu a:hover, .sidebar-menu a.active {
+.menu-item a:hover, .menu-item a.active {
     background-color: rgba(255, 255, 255, 0.1);
     color: white;
     border-left-color: var(--secondary-color);
 }
 
-.sidebar-menu i {
-    margin-right: 10px;
-    font-size: 1.1rem;
+.menu-item a i {
+    margin-right: 8px;
+    flex-shrink: 0;
+    font-size: 1.2rem;
+}
+
+.menu-text {
+    flex: 1 1 auto;
 }
 
 .admin-section {
@@ -239,7 +254,7 @@ body {
 
 /* Main Content */
 .main-content {
-    margin-left: 260px;
+    margin-left: 260px; /* Matches sidebar width */
     padding: 20px;
     transition: all 0.3s ease;
     display: none; /* Oculto por defecto */
@@ -839,19 +854,30 @@ body {
 
 @media (max-width: 768px) {
     .sidebar {
-        transform: translateX(-100%);
+        width: 72px;          /* sidebar más estrecho tipo “icon-only” */
+        min-width: 72px;
+        transform: none;      /* Visible por defecto en modo compacto */
     }
 
-    .sidebar.active {
-        transform: translateX(0);
+    .sidebar-logo {
+        padding: 10px 4px;
+    }
+
+    .sidebar-logo-img {
+        max-height: 40px;     /* logo algo más pequeño en pantallas pequeñas */
+    }
+
+    /* Menú solo iconos para que quepa todo */
+    .sidebar-menu .menu-text {
+        display: none;        /* ocultar texto, dejar solo iconos */
     }
 
     .main-content {
-        margin-left: 0;
+        margin-left: 72px; /* Ajustar margen para el sidebar compacto */
     }
 
     .menu-toggle {
-        display: block;
+        display: none; /* Ocultar toggle si el sidebar es visible y compacto */
     }
 
     .dashboard-card {
